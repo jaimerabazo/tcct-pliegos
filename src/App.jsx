@@ -342,8 +342,9 @@ const UploadModal = ({ open, onClose, onComplete }) => {
         body: file,
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'No se ha podido analizar el documento.');
+        const body = await res.json().catch(() => null);
+        const fallback = `No se ha podido analizar el documento. HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`;
+        throw new Error(body?.error || fallback);
       }
       const result = await res.json();
       setProcessing(false);

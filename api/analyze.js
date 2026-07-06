@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 export const config = {
-  maxDuration: 60,
+  maxDuration: 300,
 };
 
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
@@ -175,14 +175,20 @@ async function readRequestBody(req) {
 }
 
 function getAnthropicResult(message) {
-  if (message.parsed_output) return message.parsed_output;
+  if (message.stop_reason === 'max_tokens') {
+    throw new Error('Claude ha leído el PDF, pero la respuesta JSON se ha cortado por límite de tokens de salida.');
+  }
 
   const textBlock = message.content?.find((block) => block.type === 'text');
   if (!textBlock?.text) {
     throw new Error('Anthropic no ha devuelto un bloque de texto con el JSON estructurado.');
   }
 
-  return JSON.parse(textBlock.text);
+  try {
+    return JSON.parse(textBlock.text);
+  } catch (err) {
+    throw new Error('Claude ha respondido, pero no se ha podido convertir la respuesta en JSON válido.');
+  }
 }
 
 function getClientErrorMessage(err) {
@@ -204,6 +210,14 @@ function getClientErrorMessage(err) {
 
   if (err?.status === 413) {
     return 'El PDF es demasiado grande para enviarlo a Claude en una sola petición.';
+  }
+
+  if (err?.message?.includes('límite de tokens')) {
+    return 'Claude ha leído el PDF, pero la respuesta se ha cortado por límite de tokens. Prueba con un PDF más pequeño o subimos el límite/partimos el análisis.';
+  }
+
+  if (err?.message?.includes('JSON válido')) {
+    return 'Claude ha leído el PDF, pero la respuesta no encaja todavía con el JSON esperado por la aplicación.';
   }
 
   return 'No se ha podido analizar el documento. Inténtalo de nuevo.';
@@ -228,11 +242,18 @@ export default async function handler(req, res) {
 
   const filename = decodeURIComponent(req.headers['x-filename'] || 'pliego.pdf');
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const startedAt = Date.now();
 
   try {
-    const response = await anthropic.messages.parse({
+    console.info('Analizando pliego con Claude:', {
+      filename,
+      bytes: pdfBuffer.length,
       model: MODEL,
-      max_tokens: 8192,
+    });
+
+    const response = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 20000,
       system: EXTRACTION_PROMPT,
       messages: [
         {
@@ -257,6 +278,14 @@ export default async function handler(req, res) {
           schema: PLIEGO_ANALYSIS_SCHEMA,
         },
       },
+    });
+
+    console.info('Respuesta de Claude recibida:', {
+      filename,
+      stopReason: response.stop_reason,
+      inputTokens: response.usage?.input_tokens,
+      outputTokens: response.usage?.output_tokens,
+      durationMs: Date.now() - startedAt,
     });
 
     const result = getAnthropicResult(response);

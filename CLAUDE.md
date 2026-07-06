@@ -45,14 +45,14 @@
 - Repo `tcct-pliegos` en GitHub (`jaimerabazo/tcct-pliegos`), con `main` ya desplegado.
 - Mockup funcional en React (Vite + React 18 + Tailwind 3 + lucide-react + Google Fonts precargadas).
 - `feat/upload-pdf` (mergeada): modal de upload con drag & drop del PDF.
-- `feat/connect-api` (implementada, pendiente de PR/merge): extracción real vía **API de Anthropic Claude**.
-  - `api/analyze.js` (Vercel Function, Node): recibe el PDF en crudo, lo envía a Claude como bloque `document` en base64, llama a `messages.parse()` con `model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'` y `output_config.format: json_schema` para forzar un JSON con el mismo shape que `MOCK_ANALYSIS`.
+- `feat/connect-api` (implementada y **confirmada funcionando con un pliego real**, pendiente de PR/merge): extracción real vía **API de Anthropic Claude**.
+  - `api/analyze.js` (Vercel Function, Node): recibe el PDF en crudo, lo envía a Claude como bloque `document` en base64, llama a `messages.create()` con `model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'` y `output_config.format: json_schema` (Structured Outputs) para forzar un JSON con el mismo shape que `MOCK_ANALYSIS`. `max_tokens: 20000`, `maxDuration: 300` (también fijado en `vercel.json` porque `export const config` no bastó en el runtime de Vercel).
   - `UploadModal` ya no simula el progreso: hace `fetch('/api/analyze', ...)` de verdad, rota los mensajes de `UPLOAD_STEPS` mientras espera (barra indeterminada, no hay % real) y tiene un estado de error con "Reintentar" / "Elegir otro archivo".
   - `MOCK_PLIEGOS` pasó a vivir en `useState` dentro de `App`; cada análisis real se añade como fila nueva (`estado: 'analizado'`, con `analysisData` colgando del propio pliego) y `Analysis` prioriza `pliego.analysisData` sobre el mock.
   - Se corrigió un bug preexistente en el ribbon de `Analysis`: "Duración" y "Cierre de ofertas" estaban hardcodeados a los valores de 2026/7008; ahora se derivan de `data.resumen`/`data.plazos` (solo se notaba con datos reales distintos).
-  - Verificado en el preview con `fetch` mockeado (éxito y error); la llamada real a Claude queda pendiente de que Jaime la pruebe con su `ANTHROPIC_API_KEY` (ver §9 para el flujo de `vercel dev`).
+  - Migrado de OpenAI a Anthropic Claude por fallo de cuota/billing en la API key de OpenAI (ver §3). Jaime ya probó `vercel dev` en local con un pliego real y `ANTHROPIC_API_KEY`, y la extracción funciona.
 
-**Pendiente inmediato**: Jaime prueba `feat/connect-api` con un pliego real y su API key, y mergea si todo va bien. Después, retomar el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma).
+**Pendiente inmediato**: abrir PR de `feat/connect-api` a `main` y mergear. Después, retomar el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma) o el medio plazo (Excel real, persistencia).
 
 **Aviso registrado**: URL de Vercel es pública por defecto. Ahora que la extracción es real (aunque sea con archivos de prueba), conviene activar Vercel Password Protection o SSO antes de compartir la URL ampliamente. Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar.
 
@@ -194,7 +194,7 @@ npm run dev:api       # = vercel dev, sirve frontend + /api juntos
 - [ ] Histograma de importes por organismo en dashboard.
 
 **Medio plazo (versión funcional)**:
-- [x] Conectar a la **API de Anthropic Claude** para la extracción — implementado en rama `feat/connect-api` (`api/analyze.js`, modelo configurable por `ANTHROPIC_MODEL`, PDF base64 + `messages.parse()` + JSON Schema). Pendiente de que Jaime lo pruebe con un pliego real y su API key, y mergee.
+- [x] Conectar a la **API de Anthropic Claude** para la extracción — implementado en rama `feat/connect-api` (`api/analyze.js`, modelo configurable por `ANTHROPIC_MODEL`, PDF base64 + `messages.create()` + Structured Outputs). **Probado con un pliego real y confirmado que funciona.** Pendiente de PR/merge a `main`.
 - [x] Backend mínimo (Vercel Functions) para no exponer la API key — hecho como parte de lo anterior.
 - [ ] Exportación real a Excel (SheetJS/xlsx).
 - [ ] Persistencia de análisis (Postgres/Supabase o similar).
@@ -249,4 +249,4 @@ Los 5 bloques del flujo TCCT y los cuellos de botella identificados (por si el p
 
 ---
 
-*Última actualización: 06/07/2026 · Fase actual: mockup desplegado en Vercel, modal de upload mergeado a `main`. Extracción real vía API de Anthropic Claude implementada en `feat/connect-api`, pendiente de prueba con pliego real + API key de Jaime y merge. Vista de comparativa entre pliegos aparcada mientras tanto.*
+*Última actualización: 06/07/2026 · Fase actual: mockup desplegado en Vercel, modal de upload mergeado a `main`. Extracción real vía API de Anthropic Claude en `feat/connect-api`, **confirmada funcionando con un pliego real**, pendiente de PR/merge a `main`. Vista de comparativa entre pliegos aparcada mientras tanto.*

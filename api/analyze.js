@@ -242,15 +242,8 @@ export default async function handler(req, res) {
 
   const filename = decodeURIComponent(req.headers['x-filename'] || 'pliego.pdf');
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const startedAt = Date.now();
 
   try {
-    console.info('Analizando pliego con Claude:', {
-      filename,
-      bytes: pdfBuffer.length,
-      model: MODEL,
-    });
-
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 20000,
@@ -278,14 +271,6 @@ export default async function handler(req, res) {
           schema: PLIEGO_ANALYSIS_SCHEMA,
         },
       },
-    });
-
-    console.info('Respuesta de Claude recibida:', {
-      filename,
-      stopReason: response.stop_reason,
-      inputTokens: response.usage?.input_tokens,
-      outputTokens: response.usage?.output_tokens,
-      durationMs: Date.now() - startedAt,
     });
 
     const result = getAnthropicResult(response);

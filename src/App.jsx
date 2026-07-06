@@ -294,6 +294,7 @@ const UploadModal = ({ open, onClose, onComplete }) => {
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
   const [analysisError, setAnalysisError] = useState('');
   const inputRef = useRef(null);
 
@@ -303,6 +304,7 @@ const UploadModal = ({ open, onClose, onComplete }) => {
     setError('');
     setProcessing(false);
     setStepIndex(0);
+    setProgress(0);
     setAnalysisError('');
   };
 
@@ -347,6 +349,8 @@ const UploadModal = ({ open, onClose, onComplete }) => {
         throw new Error(body?.error || fallback);
       }
       const result = await res.json();
+      setProgress(100);
+      await new Promise(r => setTimeout(r, 400));
       setProcessing(false);
       onComplete(result);
       reset();
@@ -359,10 +363,21 @@ const UploadModal = ({ open, onClose, onComplete }) => {
   useEffect(() => {
     if (!processing) return;
     setStepIndex(0);
-    const interval = setInterval(() => {
+    setProgress(0);
+    const stepInterval = setInterval(() => {
       setStepIndex(i => (i + 1) % UPLOAD_STEPS.length);
     }, 2500);
-    return () => clearInterval(interval);
+    const progressInterval = setInterval(() => {
+      setProgress(p => {
+        if (p >= 92) return p;
+        const remaining = 92 - p;
+        return p + Math.max(0.4, remaining * 0.03);
+      });
+    }, 200);
+    return () => {
+      clearInterval(stepInterval);
+      clearInterval(progressInterval);
+    };
   }, [processing]);
 
   if (!open) return null;
@@ -402,9 +417,10 @@ const UploadModal = ({ open, onClose, onComplete }) => {
                 <Loader2 size={18} strokeWidth={2} color="#0066FF" className="animate-spin" />
                 <div className="text-[13px]" style={{ color: '#001B4B', fontWeight: 500 }}>{UPLOAD_STEPS[stepIndex]}</div>
               </div>
-              <div className="h-1.5 rounded-full overflow-hidden relative" style={{ background: '#E5E9F0' }}>
-                <div className="absolute inset-y-0 w-1/3 rounded-full" style={{ background: '#0066FF', animation: 'indeterminate 1.4s ease-in-out infinite' }} />
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#E5E9F0' }}>
+                <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: '#0066FF' }} />
               </div>
+              <div className="mt-2 text-[11px] text-right" style={{ color: '#5B6478', fontFamily: '"JetBrains Mono", monospace' }}>{Math.round(progress)}%</div>
             </div>
           ) : analysisError ? (
             <div className="flex items-start gap-3 p-4 rounded-md border" style={{ borderColor: '#F5C6C6', background: '#FCEBEB' }}>

@@ -2,7 +2,7 @@
 
 Mockup interno del analizador de pliegos de licitación pública para el equipo de presales de Telefónica Cybersecurity & Cloud Tech (TCCT).
 
-Este es un mockup visual con datos de ejemplo — no procesa PDFs reales todavía. Sirve para validar la UX y vender el caso de uso internamente antes de invertir en la parte funcional.
+La extracción de datos de los pliegos ya usa la API de OpenAI (gpt-4o) a través de una función serverless (`api/analyze.js`); el resto del producto (dashboard, navegación) sigue siendo el mismo mockup en React.
 
 ## Arrancarlo en local (3 pasos)
 
@@ -11,7 +11,13 @@ npm install
 npm run dev
 ```
 
-Abre `http://localhost:5173` y ya lo tienes.
+Abre `http://localhost:5173` y ya lo tienes. **Ojo**: con `npm run dev` (Vite) el modal de "Nuevo análisis" no puede llamar a `/api/analyze`, porque Vite solo sirve el frontend. Para probar la extracción real en local:
+
+```bash
+npx vercel link      # una vez, para asociar la carpeta al proyecto de Vercel
+npx vercel env pull  # trae las variables de entorno del proyecto (o crea .env.local con OPENAI_API_KEY=sk-...)
+npm run dev:api      # arranca vercel dev, sirve frontend + /api juntos
+```
 
 ## Desplegarlo en Vercel (10 min)
 
@@ -32,6 +38,8 @@ Abre `http://localhost:5173` y ya lo tienes.
 
 En 90 segundos tienes una URL tipo `tcct-pliegos-xxx.vercel.app` que puedes compartir con JC o con quien quieras.
 
+**Variable de entorno necesaria**: en el proyecto de Vercel (Settings → Environment Variables) añade `OPENAI_API_KEY` para Production y Preview — sin ella, `/api/analyze` responde con error.
+
 ## Cambiar el dominio
 
 En Vercel → Settings → Domains → puedes ponerle `tcct-pliegos.vercel.app` si está libre, o conectar un subdominio de TCCT si te dan permisos.
@@ -40,8 +48,10 @@ En Vercel → Settings → Domains → puedes ponerle `tcct-pliegos.vercel.app` 
 
 ```
 tcct-pliegos/
+├── api/
+│   └── analyze.js    ← Función serverless (Vercel): sube el PDF a OpenAI y extrae el JSON estructurado
 ├── src/
-│   ├── App.jsx       ← Todo el componente. Aquí se edita todo.
+│   ├── App.jsx       ← Todo el componente de frontend. Aquí se edita todo lo visual.
 │   ├── main.jsx      ← Entry point de React
 │   └── index.css     ← Tailwind + estilos globales
 ├── index.html        ← Carga Google Fonts
@@ -50,12 +60,14 @@ tcct-pliegos/
 └── package.json
 ```
 
-Los datos mock están al principio de `src/App.jsx` en las constantes `MOCK_PLIEGOS` y `MOCK_ANALYSIS`. Cualquier cambio se refleja en caliente con `npm run dev`.
+Las filas del dashboard que aún no se han analizado con la API siguen viniendo de `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en `src/App.jsx`. Los expedientes analizados vía "Nuevo análisis" usan los datos reales devueltos por `/api/analyze`.
+
+**Límite conocido**: las funciones serverless de Vercel (Node) aceptan hasta ~4.5 MB de payload. Pliegos muy grandes o con anexos escaneados pueden superarlo y fallar — pendiente de revisar si se convierte en un problema real.
 
 ## Próximos pasos
 
 - [x] Modal de upload con drag & drop del PDF
-- [ ] Vista de comparativa entre dos pliegos
-- [ ] Conectar a Claude API o Azure OpenAI para extracción real
+- [x] Conectar a la API de OpenAI para extracción real
+- [ ] Vista de comparativa entre dos pliegos (aparcada mientras se validaba la extracción real)
 - [ ] Exportación real a Excel (SheetJS)
 - [ ] Autenticación (SSO Telefónica si escala a producción)

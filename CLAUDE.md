@@ -34,6 +34,8 @@
 | **Mockup visual primero (mock data)** | Validar UX con JC antes de gastar tiempo en el LLM real. |
 | **Dos pantallas**: dashboard + análisis detallado | Suficiente para vender la idea; ampliable después. |
 | **Estilo Telefónica Tech corporativo** | Se pega a la identidad de la empresa para transmitir producto interno de verdad, no POC de fin de semana. |
+| **Vista de comparativa entre pliegos descartada por ahora** | Se prioriza conectar la extracción real (API) antes de seguir ampliando el mockup visual. Sigue en el backlog corto plazo, no eliminada. |
+| **API de extracción: OpenAI** (no Anthropic ni Azure OpenAI) | Decisión de Jaime para la rama `feat/connect-api`. Sustituye la opción registrada previamente en §5. |
 
 ---
 
@@ -42,11 +44,17 @@
 **Entregado**:
 - Repo `tcct-pliegos` en GitHub (`jaimerabazo/tcct-pliegos`), con `main` ya desplegado.
 - Mockup funcional en React (Vite + React 18 + Tailwind 3 + lucide-react + Google Fonts precargadas).
-- Rama `feat/upload-pdf`: modal de upload con drag & drop del PDF (primer ítem del backlog corto plazo, ver §10) — simula validación de PDF, progreso de "extracción" por pasos y navega al análisis completo con los datos mock de 2026/7008.
+- `feat/upload-pdf` (mergeada): modal de upload con drag & drop del PDF.
+- `feat/connect-api` (implementada, pendiente de PR/merge): extracción real vía **API de OpenAI**.
+  - `api/analyze.js` (Vercel Function, Node): recibe el PDF en crudo, lo sube a la Files API de OpenAI (`purpose: 'user_data'`), llama a `responses.create()` con `model: 'gpt-4o'` y Structured Outputs (`text.format: json_schema`, `strict: true`) para forzar un JSON con el mismo shape que `MOCK_ANALYSIS`, y borra el archivo subido al terminar.
+  - `UploadModal` ya no simula el progreso: hace `fetch('/api/analyze', ...)` de verdad, rota los mensajes de `UPLOAD_STEPS` mientras espera (barra indeterminada, no hay % real) y tiene un estado de error con "Reintentar" / "Elegir otro archivo".
+  - `MOCK_PLIEGOS` pasó a vivir en `useState` dentro de `App`; cada análisis real se añade como fila nueva (`estado: 'analizado'`, con `analysisData` colgando del propio pliego) y `Analysis` prioriza `pliego.analysisData` sobre el mock.
+  - Se corrigió un bug preexistente en el ribbon de `Analysis`: "Duración" y "Cierre de ofertas" estaban hardcodeados a los valores de 2026/7008; ahora se derivan de `data.resumen`/`data.plazos` (solo se notaba con datos reales distintos).
+  - Verificado en el preview con `fetch` mockeado (éxito y error); la llamada real a OpenAI queda pendiente de que Jaime la pruebe con su `OPENAI_API_KEY` (ver §9 para el flujo de `vercel dev`).
 
-**Pendiente inmediato**: mergear `feat/upload-pdf` a `main` cuando Jaime lo valide, y seguir con el resto del backlog corto plazo (ajustar mocks del 2026/7008, comparativa entre pliegos, histograma por organismo).
+**Pendiente inmediato**: Jaime prueba `feat/connect-api` con un pliego real y su API key, y mergea si todo va bien. Después, retomar el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma).
 
-**Aviso registrado**: URL de Vercel es pública por defecto. Para la fase actual (datos mock) no hay problema. Cuando se conecte a pliegos reales, activar Vercel Password Protection o SSO.
+**Aviso registrado**: URL de Vercel es pública por defecto. Ahora que la extracción es real (aunque sea con archivos de prueba), conviene activar Vercel Password Protection o SSO antes de compartir la URL ampliamente. Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar.
 
 ---
 
@@ -60,7 +68,7 @@ lucide-react     iconografía outline
 Google Fonts     Space Grotesk + Inter + JetBrains Mono
 ```
 
-**No hay backend**. Todo son datos mock en constantes al inicio de `src/App.jsx`. Cuando llegue el momento funcional, la extracción irá contra la Anthropic API (Claude Sonnet 4.6 para extracción, Haiku 4.5 para validación) o Azure OpenAI si TCCT ya tiene contrato.
+**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `openai` SDK v6). Sube el PDF a la Files API de OpenAI y usa la Responses API (`model: 'gpt-4o'`) con Structured Outputs para la extracción. Requiere `OPENAI_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). Los pliegos aún no analizados con la API siguen viniendo de `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en `src/App.jsx`.
 
 ---
 
@@ -121,8 +129,10 @@ marco          ENS Alto, CCN-STIC 803/804/810/811, RGPD, LOPDGDD, RD 311/2022
 
 ```
 tcct-pliegos/
+├── api/
+│   └── analyze.js              Vercel Function: sube el PDF a OpenAI y extrae el JSON estructurado
 ├── index.html                  Carga Google Fonts en <head>
-├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5
+├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, openai 6
 ├── vite.config.js              plugin-react
 ├── tailwind.config.js          extend con paleta tt-*
 ├── postcss.config.js           tailwind + autoprefixer
@@ -130,35 +140,48 @@ tcct-pliegos/
 ├── README.md                   instrucciones de despliegue
 └── src/
     ├── main.jsx                entry ReactDOM
-    ├── index.css               @tailwind directives + @keyframes pulse
-    └── App.jsx                 TODO el componente en un solo archivo (~1000 líneas)
+    ├── index.css               @tailwind directives + @keyframes pulse + @keyframes indeterminate
+    └── App.jsx                 TODO el componente de frontend en un solo archivo (~1050 líneas)
 ```
 
+**`api/analyze.js`** (Node, runtime Vercel, `maxDuration: 60`):
+- Lee el PDF como cuerpo binario crudo (`Content-Type: application/pdf`, nombre en cabecera `X-Filename`), sin multipart ni base64.
+- `openai.files.create({ purpose: 'user_data' })` + `openai.responses.create({ model: 'gpt-4o', ... })` con `text.format: { type: 'json_schema', strict: true }` (constante `PLIEGO_ANALYSIS_SCHEMA`, mismo shape que `MOCK_ANALYSIS` + un bloque `pliego` para la fila del dashboard).
+- Borra el archivo subido a OpenAI al terminar. Devuelve `{ pliego, analysis }` o `{ error }`.
+
 **`src/App.jsx`** contiene:
-- Constantes `MOCK_PLIEGOS` y `MOCK_ANALYSIS` al inicio (aquí se edita todo lo que quieras cambiar de datos).
-- Helpers `formatEuro`, `formatEuroFull`, `StatusBadge`, `ConfidenceBadge`.
+- Constantes `MOCK_PLIEGOS` y `MOCK_ANALYSIS` al inicio — siguen siendo el fallback/demo para expedientes no analizados aún vía API.
+- Helpers `formatEuro`, `formatEuroFull`, `formatShortDate`, `slugify`, `StatusBadge`, `ConfidenceBadge`.
 - Subcomponentes: `Sidebar`, `KpiCard`, `Dashboard`, `SectionCard`, `SectionTitle`, `Analysis`, `UploadModal`.
 - Constante `SECTIONS` con el índice del análisis (7 secciones).
-- Constante `UPLOAD_STEPS` con los mensajes de la simulación de progreso del `UploadModal`.
-- Componente raíz `App` con `useState` para navegación `view` ('dashboard' | 'analysis') y `selectedPliego`, más `showUploadModal` para el modal de nuevo análisis.
+- Constante `UPLOAD_STEPS` con los mensajes que rota `UploadModal` mientras espera la respuesta real de `/api/analyze`.
+- Componente raíz `App`: `pliegos` en `useState` (arranca con `MOCK_PLIEGOS`, se le añaden los análisis reales), navegación `view`/`selectedPliego`, `showUploadModal`.
 
-**No usa**: routing library (solo state), backend, base de datos, autenticación, localStorage/sessionStorage.
+**No usa**: routing library (solo state), base de datos, autenticación, localStorage/sessionStorage. Sí usa backend ahora (`api/analyze.js`, solo esa función).
 
 ---
 
 ## 9. Cómo desarrollar y desplegar
 
-**Local**:
+**Local (solo frontend, sin extracción real)**:
 ```bash
 npm install
 npm run dev        # → http://localhost:5173
 ```
 
+**Local con extracción real** (necesario para probar el modal de "Nuevo análisis" de verdad):
+```bash
+npx vercel link       # una vez
+npx vercel env pull   # o crear .env.local con OPENAI_API_KEY=sk-...
+npm run dev:api       # = vercel dev, sirve frontend + /api juntos
+```
+
 **Deploy Vercel**:
 1. Push a un repo de GitHub (`tcct-pliegos`, público o privado).
 2. vercel.com → Add New → Project → import repo → Deploy.
-3. URL pública en 90s tipo `tcct-pliegos-xxx.vercel.app`.
-4. Cada `git push` a `main` = redeploy automático.
+3. Añadir `OPENAI_API_KEY` en Settings → Environment Variables (Production + Preview) — sin ella `/api/analyze` falla.
+4. URL pública en 90s tipo `tcct-pliegos-xxx.vercel.app`.
+5. Cada `git push` a `main` = redeploy automático.
 
 ---
 
@@ -167,14 +190,15 @@ npm run dev        # → http://localhost:5173
 **Corto plazo (iteración de mockup)**:
 - [x] Modal de upload con drag & drop del PDF — implementado en rama `feat/upload-pdf`. Valida que sea PDF, simula progreso de extracción por pasos y al terminar abre el análisis completo de 2026/7008 (no procesa el PDF real, sigue siendo mock).
 - [ ] Ajustar los mock del 2026/7008 con datos más cercanos a los reales de Jaime.
-- [ ] Vista de comparativa entre dos pliegos.
+- [ ] ~~Vista de comparativa entre dos pliegos.~~ Aparcada mientras se trabaja `feat/connect-api`; retomar después.
 - [ ] Histograma de importes por organismo en dashboard.
 
 **Medio plazo (versión funcional)**:
-- [ ] Conectar a Claude API (Sonnet 4.6 extracción + Haiku 4.5 validación) o Azure OpenAI.
-- [ ] Backend mínimo (Vercel Functions o Cloudflare Workers) para no exponer la API key.
+- [x] Conectar a la **API de OpenAI** para la extracción — implementado en rama `feat/connect-api` (`api/analyze.js`, modelo gpt-4o, Files API + Responses API + Structured Outputs). Pendiente de que Jaime lo pruebe con un pliego real y su API key, y mergee.
+- [x] Backend mínimo (Vercel Functions) para no exponer la API key — hecho como parte de lo anterior.
 - [ ] Exportación real a Excel (SheetJS/xlsx).
 - [ ] Persistencia de análisis (Postgres/Supabase o similar).
+- [ ] Revisar el límite de ~4.5MB de payload de las Vercel Functions si da problemas con pliegos reales grandes/escaneados (alternativa: subida directa navegador→OpenAI).
 
 **Largo plazo (institucionalización)**:
 - [ ] SSO Telefónica.
@@ -225,4 +249,4 @@ Los 5 bloques del flujo TCCT y los cuellos de botella identificados (por si el p
 
 ---
 
-*Última actualización: 06/07/2026 · Fase actual: mockup desplegado en Vercel, modal de upload con drag & drop implementado en rama `feat/upload-pdf`, pendiente merge a `main` y siguiente ítem del backlog corto plazo.*
+*Última actualización: 06/07/2026 · Fase actual: mockup desplegado en Vercel, modal de upload mergeado a `main`. Extracción real vía API de OpenAI implementada en `feat/connect-api`, pendiente de prueba con pliego real + API key de Jaime y merge. Vista de comparativa entre pliegos aparcada mientras tanto.*

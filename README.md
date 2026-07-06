@@ -54,7 +54,7 @@ Los datos mock están al principio de `src/App.jsx` en las constantes `MOCK_PLIE
 
 ## Próximos pasos
 
-- [ ] Modal de upload con drag & drop del PDF
+- [x] Modal de upload con drag & drop del PDF
 - [ ] Vista de comparativa entre dos pliegos
 - [ ] Conectar a Claude API o Azure OpenAI para extracción real
 - [ ] Exportación real a Excel (SheetJS)

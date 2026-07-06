@@ -35,7 +35,7 @@
 | **Dos pantallas**: dashboard + análisis detallado | Suficiente para vender la idea; ampliable después. |
 | **Estilo Telefónica Tech corporativo** | Se pega a la identidad de la empresa para transmitir producto interno de verdad, no POC de fin de semana. |
 | **Vista de comparativa entre pliegos descartada por ahora** | Se prioriza conectar la extracción real (API) antes de seguir ampliando el mockup visual. Sigue en el backlog corto plazo, no eliminada. |
-| **API de extracción: OpenAI** (no Anthropic ni Azure OpenAI) | Decisión de Jaime para la rama `feat/connect-api`. Sustituye la opción registrada previamente en §5. |
+| **API de extracción: Anthropic Claude** | Se migra desde OpenAI por fallo de cuota/billing en la API key de OpenAI. |
 
 ---
 
@@ -45,12 +45,12 @@
 - Repo `tcct-pliegos` en GitHub (`jaimerabazo/tcct-pliegos`), con `main` ya desplegado.
 - Mockup funcional en React (Vite + React 18 + Tailwind 3 + lucide-react + Google Fonts precargadas).
 - `feat/upload-pdf` (mergeada): modal de upload con drag & drop del PDF.
-- `feat/connect-api` (implementada, pendiente de PR/merge): extracción real vía **API de OpenAI**.
-  - `api/analyze.js` (Vercel Function, Node): recibe el PDF en crudo, lo sube a la Files API de OpenAI (`purpose: 'user_data'`), llama a `responses.create()` con `model: 'gpt-4o'` y Structured Outputs (`text.format: json_schema`, `strict: true`) para forzar un JSON con el mismo shape que `MOCK_ANALYSIS`, y borra el archivo subido al terminar.
+- `feat/connect-api` (implementada, pendiente de PR/merge): extracción real vía **API de Anthropic Claude**.
+  - `api/analyze.js` (Vercel Function, Node): recibe el PDF en crudo, lo envía a Claude como bloque `document` en base64, llama a `messages.parse()` con `model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'` y `output_config.format: json_schema` para forzar un JSON con el mismo shape que `MOCK_ANALYSIS`.
   - `UploadModal` ya no simula el progreso: hace `fetch('/api/analyze', ...)` de verdad, rota los mensajes de `UPLOAD_STEPS` mientras espera (barra indeterminada, no hay % real) y tiene un estado de error con "Reintentar" / "Elegir otro archivo".
   - `MOCK_PLIEGOS` pasó a vivir en `useState` dentro de `App`; cada análisis real se añade como fila nueva (`estado: 'analizado'`, con `analysisData` colgando del propio pliego) y `Analysis` prioriza `pliego.analysisData` sobre el mock.
   - Se corrigió un bug preexistente en el ribbon de `Analysis`: "Duración" y "Cierre de ofertas" estaban hardcodeados a los valores de 2026/7008; ahora se derivan de `data.resumen`/`data.plazos` (solo se notaba con datos reales distintos).
-  - Verificado en el preview con `fetch` mockeado (éxito y error); la llamada real a OpenAI queda pendiente de que Jaime la pruebe con su `OPENAI_API_KEY` (ver §9 para el flujo de `vercel dev`).
+  - Verificado en el preview con `fetch` mockeado (éxito y error); la llamada real a Claude queda pendiente de que Jaime la pruebe con su `ANTHROPIC_API_KEY` (ver §9 para el flujo de `vercel dev`).
 
 **Pendiente inmediato**: Jaime prueba `feat/connect-api` con un pliego real y su API key, y mergea si todo va bien. Después, retomar el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma).
 
@@ -68,7 +68,7 @@ lucide-react     iconografía outline
 Google Fonts     Space Grotesk + Inter + JetBrains Mono
 ```
 
-**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `openai` SDK v6). Sube el PDF a la Files API de OpenAI y usa la Responses API (`model: 'gpt-4o'`) con Structured Outputs para la extracción. Requiere `OPENAI_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). Los pliegos aún no analizados con la API siguen viniendo de `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en `src/App.jsx`.
+**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.parse()` con `output_config.format: json_schema` para la extracción. Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. Los pliegos aún no analizados con la API siguen viniendo de `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en `src/App.jsx`.
 
 ---
 
@@ -130,9 +130,9 @@ marco          ENS Alto, CCN-STIC 803/804/810/811, RGPD, LOPDGDD, RD 311/2022
 ```
 tcct-pliegos/
 ├── api/
-│   └── analyze.js              Vercel Function: sube el PDF a OpenAI y extrae el JSON estructurado
+│   └── analyze.js              Vercel Function: envía el PDF a Claude y extrae el JSON estructurado
 ├── index.html                  Carga Google Fonts en <head>
-├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, openai 6
+├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, @anthropic-ai/sdk
 ├── vite.config.js              plugin-react
 ├── tailwind.config.js          extend con paleta tt-*
 ├── postcss.config.js           tailwind + autoprefixer
@@ -146,8 +146,8 @@ tcct-pliegos/
 
 **`api/analyze.js`** (Node, runtime Vercel, `maxDuration: 60`):
 - Lee el PDF como cuerpo binario crudo (`Content-Type: application/pdf`, nombre en cabecera `X-Filename`), sin multipart ni base64.
-- `openai.files.create({ purpose: 'user_data' })` + `openai.responses.create({ model: 'gpt-4o', ... })` con `text.format: { type: 'json_schema', strict: true }` (constante `PLIEGO_ANALYSIS_SCHEMA`, mismo shape que `MOCK_ANALYSIS` + un bloque `pliego` para la fila del dashboard).
-- Borra el archivo subido a OpenAI al terminar. Devuelve `{ pliego, analysis }` o `{ error }`.
+- `anthropic.messages.parse({ model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5', ... })` con `output_config.format: { type: 'json_schema', schema: PLIEGO_ANALYSIS_SCHEMA }` (mismo shape que `MOCK_ANALYSIS` + un bloque `pliego` para la fila del dashboard).
+- Devuelve `{ pliego, analysis }` o `{ error }`. No usa Files API; el PDF viaja en base64 en la misma request a Claude.
 
 **`src/App.jsx`** contiene:
 - Constantes `MOCK_PLIEGOS` y `MOCK_ANALYSIS` al inicio — siguen siendo el fallback/demo para expedientes no analizados aún vía API.
@@ -172,14 +172,14 @@ npm run dev        # → http://localhost:5173
 **Local con extracción real** (necesario para probar el modal de "Nuevo análisis" de verdad):
 ```bash
 npx vercel link       # una vez
-npx vercel env pull   # o crear .env.local con OPENAI_API_KEY=sk-...
+npx vercel env pull   # o crear .env.local con ANTHROPIC_API_KEY=sk-ant-...
 npm run dev:api       # = vercel dev, sirve frontend + /api juntos
 ```
 
 **Deploy Vercel**:
 1. Push a un repo de GitHub (`tcct-pliegos`, público o privado).
 2. vercel.com → Add New → Project → import repo → Deploy.
-3. Añadir `OPENAI_API_KEY` en Settings → Environment Variables (Production + Preview) — sin ella `/api/analyze` falla.
+3. Añadir `ANTHROPIC_API_KEY` en Settings → Environment Variables (Production + Preview) — sin ella `/api/analyze` falla. Opcional: `ANTHROPIC_MODEL`.
 4. URL pública en 90s tipo `tcct-pliegos-xxx.vercel.app`.
 5. Cada `git push` a `main` = redeploy automático.
 
@@ -194,11 +194,11 @@ npm run dev:api       # = vercel dev, sirve frontend + /api juntos
 - [ ] Histograma de importes por organismo en dashboard.
 
 **Medio plazo (versión funcional)**:
-- [x] Conectar a la **API de OpenAI** para la extracción — implementado en rama `feat/connect-api` (`api/analyze.js`, modelo gpt-4o, Files API + Responses API + Structured Outputs). Pendiente de que Jaime lo pruebe con un pliego real y su API key, y mergee.
+- [x] Conectar a la **API de Anthropic Claude** para la extracción — implementado en rama `feat/connect-api` (`api/analyze.js`, modelo configurable por `ANTHROPIC_MODEL`, PDF base64 + `messages.parse()` + JSON Schema). Pendiente de que Jaime lo pruebe con un pliego real y su API key, y mergee.
 - [x] Backend mínimo (Vercel Functions) para no exponer la API key — hecho como parte de lo anterior.
 - [ ] Exportación real a Excel (SheetJS/xlsx).
 - [ ] Persistencia de análisis (Postgres/Supabase o similar).
-- [ ] Revisar el límite de ~4.5MB de payload de las Vercel Functions si da problemas con pliegos reales grandes/escaneados (alternativa: subida directa navegador→OpenAI).
+- [ ] Revisar el límite de ~4.5MB de payload de las Vercel Functions si da problemas con pliegos reales grandes/escaneados (alternativa: subida directa navegador→Anthropic Files API o almacenamiento intermedio).
 
 **Largo plazo (institucionalización)**:
 - [ ] SSO Telefónica.
@@ -249,4 +249,4 @@ Los 5 bloques del flujo TCCT y los cuellos de botella identificados (por si el p
 
 ---
 
-*Última actualización: 06/07/2026 · Fase actual: mockup desplegado en Vercel, modal de upload mergeado a `main`. Extracción real vía API de OpenAI implementada en `feat/connect-api`, pendiente de prueba con pliego real + API key de Jaime y merge. Vista de comparativa entre pliegos aparcada mientras tanto.*
+*Última actualización: 06/07/2026 · Fase actual: mockup desplegado en Vercel, modal de upload mergeado a `main`. Extracción real vía API de Anthropic Claude implementada en `feat/connect-api`, pendiente de prueba con pliego real + API key de Jaime y merge. Vista de comparativa entre pliegos aparcada mientras tanto.*

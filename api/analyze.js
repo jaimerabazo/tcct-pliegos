@@ -1,10 +1,10 @@
-import OpenAI, { toFile } from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 
 export const config = {
   maxDuration: 60,
 };
 
-const MODEL = 'gpt-4o';
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 
 const EXTRACTION_PROMPT = `Eres un asistente experto en contratación pública española (PPT + PCAP) para el equipo de presales de ciberseguridad de Telefónica Cybersecurity & Cloud Tech (TCCT).
 
@@ -174,14 +174,49 @@ async function readRequestBody(req) {
   return Buffer.concat(chunks);
 }
 
+function getAnthropicResult(message) {
+  if (message.parsed_output) return message.parsed_output;
+
+  const textBlock = message.content?.find((block) => block.type === 'text');
+  if (!textBlock?.text) {
+    throw new Error('Anthropic no ha devuelto un bloque de texto con el JSON estructurado.');
+  }
+
+  return JSON.parse(textBlock.text);
+}
+
+function getClientErrorMessage(err) {
+  if (err?.status === 401) {
+    return 'La API key de Anthropic no es válida o ha sido revocada.';
+  }
+
+  if (err?.status === 403) {
+    return 'La API key de Anthropic no tiene permisos para usar este modelo o recurso.';
+  }
+
+  if (err?.status === 429) {
+    return 'Anthropic ha limitado la petición por cuota o rate limit. Revisa billing/cuota o inténtalo de nuevo en unos minutos.';
+  }
+
+  if (err?.status === 400 && err?.message?.includes('credit')) {
+    return 'La cuenta de Anthropic no tiene créditos disponibles o billing configurado.';
+  }
+
+  if (err?.status === 413) {
+    return 'El PDF es demasiado grande para enviarlo a Claude en una sola petición.';
+  }
+
+  return 'No se ha podido analizar el documento. Inténtalo de nuevo.';
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Método no permitido.' });
     return;
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    res.status(500).json({ error: 'Falta configurar OPENAI_API_KEY en el entorno del servidor.' });
+  if (!process.env.ANTHROPIC_API_KEY) {
+    res.status(500).json({ error: 'Falta configurar ANTHROPIC_API_KEY en el entorno del servidor.' });
     return;
   }
 
@@ -192,45 +227,42 @@ export default async function handler(req, res) {
   }
 
   const filename = decodeURIComponent(req.headers['x-filename'] || 'pliego.pdf');
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  let uploadedFile;
   try {
-    uploadedFile = await openai.files.create({
-      file: await toFile(pdfBuffer, filename, { type: 'application/pdf' }),
-      purpose: 'user_data',
-    });
-
-    const response = await openai.responses.create({
+    const response = await anthropic.messages.parse({
       model: MODEL,
-      input: [
-        { role: 'system', content: EXTRACTION_PROMPT },
+      max_tokens: 8192,
+      system: EXTRACTION_PROMPT,
+      messages: [
         {
           role: 'user',
           content: [
-            { type: 'input_file', file_id: uploadedFile.id },
-            { type: 'input_text', text: 'Extrae los datos estructurados de este pliego de licitación pública.' },
+            {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: pdfBuffer.toString('base64'),
+              },
+              title: filename,
+            },
+            { type: 'text', text: 'Extrae los datos estructurados de este pliego de licitación pública.' },
           ],
         },
       ],
-      text: {
+      output_config: {
         format: {
           type: 'json_schema',
-          name: 'pliego_analysis',
           schema: PLIEGO_ANALYSIS_SCHEMA,
-          strict: true,
         },
       },
     });
 
-    const result = JSON.parse(response.output_text);
+    const result = getAnthropicResult(response);
     res.status(200).json(result);
   } catch (err) {
     console.error('Error analizando el pliego:', err);
-    res.status(502).json({ error: 'No se ha podido analizar el documento. Inténtalo de nuevo.' });
-  } finally {
-    if (uploadedFile) {
-      openai.files.delete(uploadedFile.id).catch(() => {});
-    }
+    res.status(502).json({ error: getClientErrorMessage(err) });
   }
 }

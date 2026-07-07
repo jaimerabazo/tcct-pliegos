@@ -191,7 +191,8 @@ npm run dev:api       # = vercel dev, sirve frontend + /api juntos
 - [x] Modal de upload con drag & drop del PDF — implementado en rama `feat/upload-pdf`. Valida que sea PDF, simula progreso de extracción por pasos y al terminar abre el análisis completo de 2026/7008 (no procesa el PDF real, sigue siendo mock).
 - [ ] Ajustar los mock del 2026/7008 con datos más cercanos a los reales de Jaime.
 - [ ] ~~Vista de comparativa entre dos pliegos.~~ Aparcada mientras se trabaja `feat/connect-api`; retomar después.
-- [ ] Histograma de importes por organismo en dashboard.
+- [x] Histograma de importes por organismo en dashboard — barras horizontales (una por organismo, agregando `importe` si se repite), ordenadas de mayor a menor, bajo la tabla de expedientes.
+- [x] KPI "Tiempo medio de extracción" sustituida por "Importe medio" (junto a "Importe agregado"), por ser más accionable para presales.
 
 **Medio plazo (versión funcional)**:
 - [x] Conectar a la **API de Anthropic Claude** para la extracción — implementado en rama `feat/connect-api` (`api/analyze.js`, modelo configurable por `ANTHROPIC_MODEL`, PDF base64 + `messages.create()` + Structured Outputs). **Probado con un pliego real y confirmado que funciona.** Pendiente de PR/merge a `main`.

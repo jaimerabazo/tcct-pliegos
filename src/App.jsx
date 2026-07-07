@@ -185,6 +185,11 @@ const formatEuroFull = (n) => new Intl.NumberFormat('es-ES', {
   style: 'currency', currency: 'EUR', maximumFractionDigits: 0
 }).format(n);
 
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const formatShortDate = (d) => `${String(d.getDate()).padStart(2, '0')} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`;
+
+const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
 const StatusBadge = ({ estado }) => {
   const config = {
     analizado: { label: 'Analizado', bg: '#E6F4EE', text: '#0A6B4A', dot: '#00A67C' },
@@ -290,6 +295,7 @@ const UploadModal = ({ open, onClose, onComplete }) => {
   const [processing, setProcessing] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [analysisError, setAnalysisError] = useState('');
   const inputRef = useRef(null);
 
   const reset = () => {
@@ -299,6 +305,7 @@ const UploadModal = ({ open, onClose, onComplete }) => {
     setProcessing(false);
     setStepIndex(0);
     setProgress(0);
+    setAnalysisError('');
   };
 
   const handleClose = () => {
@@ -323,25 +330,54 @@ const UploadModal = ({ open, onClose, onComplete }) => {
     validateAndSetFile(e.dataTransfer.files?.[0]);
   };
 
+  const handleAnalyze = async () => {
+    if (!file) return;
+    setAnalysisError('');
+    setProcessing(true);
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/pdf',
+          'X-Filename': encodeURIComponent(file.name),
+        },
+        body: file,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const fallback = `No se ha podido analizar el documento. HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}.`;
+        throw new Error(body?.error || fallback);
+      }
+      const result = await res.json();
+      setProgress(100);
+      await new Promise(r => setTimeout(r, 400));
+      setProcessing(false);
+      onComplete(result);
+      reset();
+    } catch (err) {
+      setProcessing(false);
+      setAnalysisError(err.message || 'No se ha podido analizar el documento.');
+    }
+  };
+
   useEffect(() => {
     if (!processing) return;
     setStepIndex(0);
     setProgress(0);
-    let pct = 0;
-    const interval = setInterval(() => {
-      pct += 4;
-      const clamped = Math.min(pct, 100);
-      setProgress(clamped);
-      setStepIndex(Math.min(Math.floor(clamped / (100 / UPLOAD_STEPS.length)), UPLOAD_STEPS.length - 1));
-      if (clamped >= 100) {
-        clearInterval(interval);
-        setTimeout(() => {
-          onComplete();
-          reset();
-        }, 300);
-      }
-    }, 90);
-    return () => clearInterval(interval);
+    const stepInterval = setInterval(() => {
+      setStepIndex(i => (i + 1) % UPLOAD_STEPS.length);
+    }, 2500);
+    const progressInterval = setInterval(() => {
+      setProgress(p => {
+        if (p >= 92) return p;
+        const remaining = 92 - p;
+        return p + Math.max(0.4, remaining * 0.03);
+      });
+    }, 200);
+    return () => {
+      clearInterval(stepInterval);
+      clearInterval(progressInterval);
+    };
   }, [processing]);
 
   if (!open) return null;
@@ -384,7 +420,15 @@ const UploadModal = ({ open, onClose, onComplete }) => {
               <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#E5E9F0' }}>
                 <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: '#0066FF' }} />
               </div>
-              <div className="mt-2 text-[11px] text-right" style={{ color: '#5B6478', fontFamily: '"JetBrains Mono", monospace' }}>{progress}%</div>
+              <div className="mt-2 text-[11px] text-right" style={{ color: '#5B6478', fontFamily: '"JetBrains Mono", monospace' }}>{Math.round(progress)}%</div>
+            </div>
+          ) : analysisError ? (
+            <div className="flex items-start gap-3 p-4 rounded-md border" style={{ borderColor: '#F5C6C6', background: '#FCEBEB' }}>
+              <AlertTriangle size={18} color="#8B1F1F" strokeWidth={1.8} className="shrink-0 mt-0.5" />
+              <div>
+                <div className="text-[13px] mb-0.5" style={{ color: '#8B1F1F', fontWeight: 500 }}>No se ha podido analizar el pliego</div>
+                <div className="text-[12px]" style={{ color: '#8B1F1F' }}>{analysisError}</div>
+              </div>
             </div>
           ) : file ? (
             <div className="flex items-center gap-3 p-4 rounded-md border" style={{ borderColor: '#E5E9F0', background: '#FAFBFC' }}>
@@ -441,7 +485,31 @@ const UploadModal = ({ open, onClose, onComplete }) => {
           )}
         </div>
 
-        {!processing && (
+        {!processing && analysisError && (
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t" style={{ borderColor: '#E5E9F0' }}>
+            <button
+              onClick={() => { setAnalysisError(''); setFile(null); }}
+              className="px-4 py-2 rounded-md text-[13px] transition"
+              style={{ color: '#5B6478' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#F5F7FA'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              Elegir otro archivo
+            </button>
+            <button
+              onClick={handleAnalyze}
+              className="flex items-center gap-2 px-4 py-2 rounded-md text-[13px] transition"
+              style={{ background: '#0066FF', color: 'white', fontWeight: 500 }}
+              onMouseEnter={e => e.currentTarget.style.background = '#0044CC'}
+              onMouseLeave={e => e.currentTarget.style.background = '#0066FF'}
+            >
+              <Zap size={13} strokeWidth={2} />
+              Reintentar
+            </button>
+          </div>
+        )}
+
+        {!processing && !analysisError && (
           <div className="flex items-center justify-end gap-2 px-6 py-4 border-t" style={{ borderColor: '#E5E9F0' }}>
             <button
               onClick={handleClose}
@@ -453,7 +521,7 @@ const UploadModal = ({ open, onClose, onComplete }) => {
               Cancelar
             </button>
             <button
-              onClick={() => file && setProcessing(true)}
+              onClick={handleAnalyze}
               disabled={!file}
               className="flex items-center gap-2 px-4 py-2 rounded-md text-[13px] transition"
               style={{
@@ -495,7 +563,7 @@ const KpiCard = ({ label, value, delta, icon: Icon, mono }) => (
   </div>
 );
 
-const Dashboard = ({ onSelect, onNewAnalysis }) => (
+const Dashboard = ({ pliegos, onSelect, onNewAnalysis }) => (
   <div className="p-8 max-w-[1200px]">
     <div className="flex items-start justify-between mb-8">
       <div>
@@ -528,7 +596,7 @@ const Dashboard = ({ onSelect, onNewAnalysis }) => (
           <h2 style={{ fontFamily: '"Space Grotesk", sans-serif', fontWeight: 500, fontSize: '15px', color: '#001B4B' }}>
             Expedientes recientes
           </h2>
-          <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: '#F5F7FA', color: '#5B6478' }}>{MOCK_PLIEGOS.length}</span>
+          <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: '#F5F7FA', color: '#5B6478' }}>{pliegos.length}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border text-[12px]" style={{ borderColor: '#E5E9F0', color: '#5B6478', width: '240px' }}>
@@ -555,7 +623,7 @@ const Dashboard = ({ onSelect, onNewAnalysis }) => (
           </tr>
         </thead>
         <tbody>
-          {MOCK_PLIEGOS.map((p, idx) => (
+          {pliegos.map((p, idx) => (
             <tr key={p.id}
               onClick={() => onSelect(p)}
               className="cursor-pointer transition"
@@ -639,7 +707,7 @@ const SECTIONS = [
 
 const Analysis = ({ pliego, onBack }) => {
   const [section, setSection] = useState('resumen');
-  const data = MOCK_ANALYSIS[pliego.id] || MOCK_ANALYSIS['2026-7008']; // fallback a demo
+  const data = pliego.analysisData || MOCK_ANALYSIS[pliego.id] || MOCK_ANALYSIS['2026-7008']; // fallback a demo
 
   return (
     <div className="max-w-[1200px]">
@@ -691,8 +759,8 @@ const Analysis = ({ pliego, onBack }) => {
           {[
             { label: 'Importe total', value: formatEuroFull(pliego.importe), mono: true },
             { label: 'Lotes', value: pliego.lotes.toString() },
-            { label: 'Duración', value: '48 meses + 2×12' },
-            { label: 'Cierre de ofertas', value: '15 jul 2026 · 14:00', highlight: true },
+            { label: 'Duración', value: `${data.resumen.duracion} + ${data.resumen.prorrogas}` },
+            { label: 'Cierre de ofertas', value: data.plazos.limite, highlight: true },
           ].map((item, idx) => (
             <div key={idx} className="p-4" style={{ borderLeft: idx > 0 ? '1px solid #E5E9F0' : 'none' }}>
               <div className="text-[10px] uppercase tracking-wider mb-2" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>{item.label}</div>
@@ -966,6 +1034,7 @@ const Analysis = ({ pliego, onBack }) => {
 
 export default function App() {
   const [view, setView] = useState('dashboard');
+  const [pliegos, setPliegos] = useState(MOCK_PLIEGOS);
   const [selectedPliego, setSelectedPliego] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
 
@@ -974,9 +1043,17 @@ export default function App() {
     setView('analysis');
   };
 
-  const handleUploadComplete = () => {
+  const handleUploadComplete = ({ pliego, analysis }) => {
+    const newPliego = {
+      ...pliego,
+      id: slugify(pliego.expediente),
+      fechaAnalisis: formatShortDate(new Date()),
+      estado: 'analizado',
+      analysisData: analysis,
+    };
+    setPliegos(prev => [newPliego, ...prev]);
     setShowUploadModal(false);
-    handleSelect(MOCK_PLIEGOS[0]); // único expediente con análisis mock completo
+    handleSelect(newPliego);
   };
 
   return (
@@ -984,7 +1061,7 @@ export default function App() {
       <div className="min-h-screen flex" style={{ background: '#FAFBFC', fontFamily: '"Inter", -apple-system, sans-serif', color: '#001B4B' }}>
         <Sidebar view={view} setView={setView} />
         <main className="flex-1 overflow-auto">
-          {view === 'dashboard' && <Dashboard onSelect={handleSelect} onNewAnalysis={() => setShowUploadModal(true)} />}
+          {view === 'dashboard' && <Dashboard pliegos={pliegos} onSelect={handleSelect} onNewAnalysis={() => setShowUploadModal(true)} />}
           {view === 'analysis' && selectedPliego && <Analysis pliego={selectedPliego} onBack={() => setView('dashboard')} />}
         </main>
       </div>

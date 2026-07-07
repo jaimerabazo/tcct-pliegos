@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, FileSearch, Settings, Search, Plus, ArrowLeft,
-  Download, Wand2, ChevronRight, TrendingUp, Clock, Euro, CheckCircle2,
+  Download, Wand2, ChevronRight, TrendingUp, Euro, CheckCircle2,
   Package, Users, Shield, Scale, AlertTriangle, Calendar, FileText,
   Zap, ArrowUpRight, Filter, MoreHorizontal, Sparkles, Building2,
   UploadCloud, X, Loader2
@@ -563,7 +563,35 @@ const KpiCard = ({ label, value, delta, icon: Icon, mono }) => (
   </div>
 );
 
-const Dashboard = ({ pliegos, onSelect, onNewAnalysis }) => (
+const OrganismoBar = ({ organismo, importe, pct }) => (
+  <div>
+    <div className="flex items-center justify-between gap-3 mb-1.5">
+      <span className="text-[12.5px] truncate" style={{ color: '#001B4B' }}>{organismo}</span>
+      <span className="text-[12.5px] shrink-0" style={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 500, color: '#001B4B' }}>
+        {formatEuro(importe)}
+      </span>
+    </div>
+    <div
+      className="h-2 rounded-full overflow-hidden"
+      style={{ background: '#F0F2F5' }}
+      title={formatEuroFull(importe)}
+    >
+      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: '#0066FF' }} />
+    </div>
+  </div>
+);
+
+const Dashboard = ({ pliegos, onSelect, onNewAnalysis }) => {
+  const importePorOrganismo = Object.values(
+    pliegos.reduce((acc, p) => {
+      if (!acc[p.organismo]) acc[p.organismo] = { organismo: p.organismo, importe: 0 };
+      acc[p.organismo].importe += p.importe;
+      return acc;
+    }, {})
+  ).sort((a, b) => b.importe - a.importe);
+  const maxImporte = importePorOrganismo[0]?.importe || 1;
+
+  return (
   <div className="p-8 max-w-[1200px]">
     <div className="flex items-start justify-between mb-8">
       <div>
@@ -585,8 +613,8 @@ const Dashboard = ({ pliegos, onSelect, onNewAnalysis }) => (
 
     <div className="grid grid-cols-4 gap-4 mb-8">
       <KpiCard label="Pliegos analizados (mes)" value="24" delta="+37%" icon={FileText} />
-      <KpiCard label="Tiempo medio de extracción" value="52s" delta="-14s" icon={Clock} />
       <KpiCard label="Importe agregado" value="86.2M €" delta="+22%" icon={Euro} mono />
+      <KpiCard label="Importe medio" value="3.59M €" delta="+8%" icon={Euro} mono />
       <KpiCard label="Confianza media" value="94%" delta="+2%" icon={CheckCircle2} />
     </div>
 
@@ -660,8 +688,23 @@ const Dashboard = ({ pliegos, onSelect, onNewAnalysis }) => (
         </tbody>
       </table>
     </div>
+
+    <div className="rounded-lg border overflow-hidden mt-6" style={{ borderColor: '#E5E9F0', background: 'white' }}>
+      <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: '#E5E9F0' }}>
+        <h2 style={{ fontFamily: '"Space Grotesk", sans-serif', fontWeight: 500, fontSize: '15px', color: '#001B4B' }}>
+          Importe por organismo
+        </h2>
+        <span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: '#F5F7FA', color: '#5B6478' }}>{importePorOrganismo.length}</span>
+      </div>
+      <div className="p-5 space-y-4">
+        {importePorOrganismo.map(o => (
+          <OrganismoBar key={o.organismo} organismo={o.organismo} importe={o.importe} pct={(o.importe / maxImporte) * 100} />
+        ))}
+      </div>
+    </div>
   </div>
-);
+  );
+};
 
 // ---------- ANALYSIS ----------
 

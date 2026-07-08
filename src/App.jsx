@@ -824,11 +824,12 @@ const SECTIONS = [
   { id: 'plazos', label: 'Plazos e hitos', icon: Calendar },
 ];
 
-export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
+export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) => {
   const [section, setSection] = useState('resumen');
   const [editingSection, setEditingSection] = useState(null);
   const [draft, setDraft] = useState(null);
-  const [draftInitial, setDraftInitial] = useState(null); // snapshot JSON del draft al empezar a editar
+  const [pliegoImporteDraft, setPliegoImporteDraft] = useState(null); // solo relevante editando 'lotes'
+  const [draftInitial, setDraftInitial] = useState(null); // snapshot JSON del draft (+ importe total) al empezar a editar
   const ownAnalysis = pliego.analysisData || MOCK_ANALYSIS[pliego.id]; // análisis propio de este pliego (real o mock por id)
   const data = ownAnalysis || MOCK_ANALYSIS['2026-7008']; // fallback a demo (no pertenece a este pliego)
 
@@ -840,7 +841,8 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
   };
 
   const hasUnsavedChanges = () =>
-    editingSection !== null && draftInitial !== null && JSON.stringify(draft) !== draftInitial;
+    editingSection !== null && draftInitial !== null &&
+    JSON.stringify({ draft, pliegoImporteDraft }) !== draftInitial;
 
   const confirmDiscardIfNeeded = () => {
     if (!hasUnsavedChanges()) return true;
@@ -850,14 +852,17 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
   const startEdit = (sectionId) => {
     if (editingSection && editingSection !== sectionId && !confirmDiscardIfNeeded()) return;
     const d = buildDraft(sectionId);
+    const importeDraft = sectionId === 'lotes' ? pliego.importe : null;
     setDraft(d);
-    setDraftInitial(JSON.stringify(d));
+    setPliegoImporteDraft(importeDraft);
+    setDraftInitial(JSON.stringify({ draft: d, pliegoImporteDraft: importeDraft }));
     setEditingSection(sectionId);
   };
 
   const cancelEdit = () => {
     setEditingSection(null);
     setDraft(null);
+    setPliegoImporteDraft(null);
     setDraftInitial(null);
   };
 
@@ -876,6 +881,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
   const collectEmptyNumbers = () => {
     const empty = [];
     if (editingSection === 'lotes') {
+      if (isBlankNumber(pliegoImporteDraft)) empty.push('Importe total del pliego');
       draft.forEach((lote, i) => { if (isBlankNumber(lote.importe)) empty.push(`Lote ${i + 1} · importe`); });
     } else if (editingSection === 'perfiles') {
       draft.forEach((p, i) => {
@@ -911,8 +917,12 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
       updated = { ...data, [editingSection]: draft };
     }
     onUpdateAnalysis(pliego.id, updated);
+    if (editingSection === 'lotes') {
+      onUpdatePliego(pliego.id, { importe: pliegoImporteDraft });
+    }
     setEditingSection(null);
     setDraft(null);
+    setPliegoImporteDraft(null);
     setDraftInitial(null);
   };
 
@@ -1113,7 +1123,8 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
                 // Solo tiene sentido comparar si el análisis pertenece a este pliego;
                 // con el fallback demo, los lotes no son los de este expediente.
                 if (!ownAnalysis) return null;
-                const mismatch = getLotesSumMismatch(pliego, { lotes: editingSection === 'lotes' ? draft : data.lotes });
+                const pliegoParaComparar = editingSection === 'lotes' ? { importe: pliegoImporteDraft } : pliego;
+                const mismatch = getLotesSumMismatch(pliegoParaComparar, { lotes: editingSection === 'lotes' ? draft : data.lotes });
                 if (!mismatch) return null;
                 return (
                   <div className="flex items-start gap-3 p-3 mb-4 rounded-md border" style={{ borderColor: '#F5C6C6', background: '#FCEBEB' }}>
@@ -1125,6 +1136,12 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
                   </div>
                 );
               })()}
+              {editingSection === 'lotes' && (
+                <div className="mb-4 max-w-[220px]">
+                  <FieldLabel>Importe total del pliego</FieldLabel>
+                  <NumberField value={pliegoImporteDraft} onChange={setPliegoImporteDraft} />
+                </div>
+              )}
               <div className="space-y-2">
                 {(editingSection === 'lotes' ? draft : data.lotes).map((lote, idx) => (
                   <div key={lote.numero} className="flex items-start gap-4 p-4 rounded-md border" style={{ borderColor: '#E5E9F0' }}>
@@ -1490,13 +1507,18 @@ export default function App() {
     setSelectedPliego(prev => (prev && prev.id === pliegoId ? { ...prev, analysisData: updatedAnalysis } : prev));
   };
 
+  const handleUpdatePliego = (pliegoId, patch) => {
+    setPliegos(prev => prev.map(p => (p.id === pliegoId ? { ...p, ...patch } : p)));
+    setSelectedPliego(prev => (prev && prev.id === pliegoId ? { ...prev, ...patch } : prev));
+  };
+
   return (
     <>
       <div className="min-h-screen flex" style={{ background: '#FAFBFC', fontFamily: '"Inter", -apple-system, sans-serif', color: '#001B4B' }}>
         <Sidebar view={view} setView={setView} />
         <main className="flex-1 overflow-auto">
           {view === 'dashboard' && <Dashboard pliegos={pliegos} onSelect={handleSelect} onNewAnalysis={() => setShowUploadModal(true)} />}
-          {view === 'analysis' && selectedPliego && <Analysis pliego={selectedPliego} onBack={() => setView('dashboard')} onUpdateAnalysis={handleUpdateAnalysis} />}
+          {view === 'analysis' && selectedPliego && <Analysis pliego={selectedPliego} onBack={() => setView('dashboard')} onUpdateAnalysis={handleUpdateAnalysis} onUpdatePliego={handleUpdatePliego} />}
         </main>
       </div>
       <UploadModal

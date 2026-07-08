@@ -94,3 +94,63 @@ describe('Analysis - aviso de descuadre lotes vs importe', () => {
     expect(container.textContent).toMatch(/de más/);
   });
 });
+
+describe('Analysis - edición del importe total del pliego (sección Lotes)', () => {
+  it('el aviso de descuadre reacciona en vivo al editar el importe total, antes de guardar', async () => {
+    const user = userEvent.setup();
+    const pliego = buildPliego(5000, [1000, 2000]); // suma lotes = 3000, importe pliego = 5000
+    const { container } = render(
+      <Analysis pliego={pliego} onBack={vi.fn()} onUpdateAnalysis={vi.fn()} onUpdatePliego={vi.fn()} />
+    );
+
+    await goToLotes(user);
+    await user.click(screen.getByRole('button', { name: 'Editar' }));
+    expect(container.textContent).toMatch(/no coincide con el importe total del pliego/);
+
+    const totalInput = screen.getByText('Importe total del pliego').nextElementSibling;
+    await user.clear(totalInput);
+    await user.type(totalInput, '3000');
+
+    expect(container.textContent).not.toMatch(/no coincide con el importe total del pliego/);
+  });
+
+  it('al guardar, actualiza el pliego (importe total) y el análisis (lotes) por separado', async () => {
+    const user = userEvent.setup();
+    const pliego = buildPliego(5000, [1000, 2000]);
+    const onUpdateAnalysis = vi.fn();
+    const onUpdatePliego = vi.fn();
+    render(<Analysis pliego={pliego} onBack={vi.fn()} onUpdateAnalysis={onUpdateAnalysis} onUpdatePliego={onUpdatePliego} />);
+
+    await goToLotes(user);
+    await user.click(screen.getByRole('button', { name: 'Editar' }));
+
+    const totalInput = screen.getByText('Importe total del pliego').nextElementSibling;
+    await user.clear(totalInput);
+    await user.type(totalInput, '3000');
+
+    await user.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    expect(onUpdatePliego).toHaveBeenCalledWith('test-1', { importe: 3000 });
+    expect(onUpdateAnalysis).toHaveBeenCalledTimes(1);
+  });
+
+  it('al cancelar, no llama a onUpdatePliego ni onUpdateAnalysis', async () => {
+    const user = userEvent.setup();
+    const pliego = buildPliego(5000, [1000, 2000]);
+    const onUpdateAnalysis = vi.fn();
+    const onUpdatePliego = vi.fn();
+    render(<Analysis pliego={pliego} onBack={vi.fn()} onUpdateAnalysis={onUpdateAnalysis} onUpdatePliego={onUpdatePliego} />);
+
+    await goToLotes(user);
+    await user.click(screen.getByRole('button', { name: 'Editar' }));
+
+    const totalInput = screen.getByText('Importe total del pliego').nextElementSibling;
+    await user.clear(totalInput);
+    await user.type(totalInput, '3000');
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+    expect(onUpdatePliego).not.toHaveBeenCalled();
+    expect(onUpdateAnalysis).not.toHaveBeenCalled();
+  });
+});

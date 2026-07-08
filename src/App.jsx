@@ -175,15 +175,20 @@ const MOCK_ANALYSIS = {
 
 // ---------- HELPERS ----------
 
+const isBlankNumber = (v) => v === '' || v === null || v === undefined || Number.isNaN(v);
+
+const formatNumber = (n) => (isBlankNumber(n) ? '—' : n);
+
 const formatEuro = (n) => {
+  if (isBlankNumber(n)) return '—';
   if (n >= 1000000) return `${(n / 1000000).toFixed(2)}M €`;
   if (n >= 1000) return `${(n / 1000).toFixed(0)}K €`;
   return `${n} €`;
 };
 
-const formatEuroFull = (n) => new Intl.NumberFormat('es-ES', {
+const formatEuroFull = (n) => (isBlankNumber(n) ? '—' : new Intl.NumberFormat('es-ES', {
   style: 'currency', currency: 'EUR', maximumFractionDigits: 0
-}).format(n);
+}).format(n));
 
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const formatShortDate = (d) => `${String(d.getDate()).padStart(2, '0')} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`;
@@ -795,8 +800,8 @@ const TextField = ({ value, onChange, mono = false, className = '' }) => (
 const NumberField = ({ value, onChange, mono = true, className = '' }) => (
   <input
     type="number"
-    value={value}
-    onChange={e => onChange(Number(e.target.value))}
+    value={value ?? ''}
+    onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))}
     className={`w-full px-2.5 py-1.5 rounded-md border text-[13px] ${className}`}
     style={{ ...fieldStyle, fontFamily: mono ? '"JetBrains Mono", monospace' : undefined }}
   />
@@ -841,23 +846,78 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
   const [section, setSection] = useState('resumen');
   const [editingSection, setEditingSection] = useState(null);
   const [draft, setDraft] = useState(null);
+  const [draftInitial, setDraftInitial] = useState(null); // snapshot JSON del draft al empezar a editar
   const data = pliego.analysisData || MOCK_ANALYSIS[pliego.id] || MOCK_ANALYSIS['2026-7008']; // fallback a demo
 
-  const startEdit = (sectionId) => {
+  const buildDraft = (sectionId) => {
     if (sectionId === 'resumen') {
-      setDraft({ ...structuredClone(data.resumen), ccnStic: [...data.marco.ccnStic], normativa: [...data.marco.normativa] });
-    } else {
-      setDraft(structuredClone(data[sectionId]));
+      return { ...structuredClone(data.resumen), ccnStic: [...data.marco.ccnStic], normativa: [...data.marco.normativa] };
     }
+    return structuredClone(data[sectionId]);
+  };
+
+  const hasUnsavedChanges = () =>
+    editingSection !== null && draftInitial !== null && JSON.stringify(draft) !== draftInitial;
+
+  const confirmDiscardIfNeeded = () => {
+    if (!hasUnsavedChanges()) return true;
+    return window.confirm('Tienes cambios sin guardar en la sección que estás editando. Se perderán si continúas. ¿Descartar los cambios?');
+  };
+
+  const startEdit = (sectionId) => {
+    if (editingSection && editingSection !== sectionId && !confirmDiscardIfNeeded()) return;
+    const d = buildDraft(sectionId);
+    setDraft(d);
+    setDraftInitial(JSON.stringify(d));
     setEditingSection(sectionId);
   };
 
   const cancelEdit = () => {
     setEditingSection(null);
     setDraft(null);
+    setDraftInitial(null);
+  };
+
+  const goToSection = (sectionId) => {
+    if (sectionId === section) return;
+    if (!confirmDiscardIfNeeded()) return;
+    if (editingSection) cancelEdit();
+    setSection(sectionId);
+  };
+
+  const handleBack = () => {
+    if (!confirmDiscardIfNeeded()) return;
+    onBack();
+  };
+
+  const collectEmptyNumbers = () => {
+    const empty = [];
+    if (editingSection === 'lotes') {
+      draft.forEach((lote, i) => { if (isBlankNumber(lote.importe)) empty.push(`Lote ${i + 1} · importe`); });
+    } else if (editingSection === 'perfiles') {
+      draft.forEach((p, i) => {
+        const label = p.categoria || `Perfil ${i + 1}`;
+        if (isBlankNumber(p.headcount)) empty.push(`${label} · nº recursos`);
+        if (isBlankNumber(p.experiencia)) empty.push(`${label} · experiencia`);
+      });
+    } else if (editingSection === 'solvencia') {
+      if (isBlankNumber(draft.tecnica?.volumenNegocio)) empty.push('Volumen de negocio');
+      if (isBlankNumber(draft.economica?.seguroRC)) empty.push('Seguro RC');
+      if (isBlankNumber(draft.economica?.capitalMinimo)) empty.push('Capital mínimo');
+    } else if (editingSection === 'criterios') {
+      draft.forEach((c, i) => { if (isBlankNumber(c.peso)) empty.push(`${c.criterio || `Criterio ${i + 1}`} · peso`); });
+    }
+    return empty;
   };
 
   const saveEdit = () => {
+    const emptyNumbers = collectEmptyNumbers();
+    if (emptyNumbers.length > 0) {
+      const ok = window.confirm(
+        `Hay campos numéricos vacíos que se guardarán sin valor:\n\n· ${emptyNumbers.join('\n· ')}\n\n¿Guardar de todas formas?`
+      );
+      if (!ok) return;
+    }
     let updated;
     if (editingSection === 'resumen') {
       const { ccnStic, normativa, ...resumen } = draft;
@@ -870,6 +930,7 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
     onUpdateAnalysis(pliego.id, updated);
     setEditingSection(null);
     setDraft(null);
+    setDraftInitial(null);
   };
 
   const updateDraftRow = (idx, field, value) => {
@@ -880,7 +941,7 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
     <div className="max-w-[1200px]">
       {/* Toolbar */}
       <div className="flex items-center justify-between px-8 py-4 border-b" style={{ borderColor: '#E5E9F0', background: 'white' }}>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-[13px]" style={{ color: '#5B6478' }}
+        <button onClick={handleBack} className="flex items-center gap-1.5 text-[13px]" style={{ color: '#5B6478' }}
           onMouseEnter={e => e.currentTarget.style.color = '#001B4B'}
           onMouseLeave={e => e.currentTarget.style.color = '#5B6478'}>
           <ArrowLeft size={14} strokeWidth={1.8} />
@@ -953,7 +1014,7 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
           {SECTIONS.map(s => (
             <button
               key={s.id}
-              onClick={() => setSection(s.id)}
+              onClick={() => goToSection(s.id)}
               className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-left rounded-md transition mb-0.5"
               style={{
                 color: section === s.id ? '#0066FF' : '#5B6478',
@@ -1060,7 +1121,7 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
               <SectionTitle
                 icon={Package}
                 title="Lotes"
-                subtitle={`${data.lotes.length} lotes por un importe agregado de ${formatEuroFull(data.lotes.reduce((a, l) => a + l.importe, 0))}`}
+                subtitle={`${data.lotes.length} lotes por un importe agregado de ${formatEuroFull(data.lotes.reduce((a, l) => a + (Number(l.importe) || 0), 0))}`}
                 actions={editingSection === 'lotes'
                   ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
                   : <EditButton onClick={() => startEdit('lotes')} />}
@@ -1106,7 +1167,7 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
               <SectionTitle
                 icon={Users}
                 title="Perfiles requeridos (STS)"
-                subtitle={`${data.perfiles.reduce((a, p) => a + p.headcount, 0)} recursos totales distribuidos en ${data.perfiles.length} categorías`}
+                subtitle={`${data.perfiles.reduce((a, p) => a + (Number(p.headcount) || 0), 0)} recursos totales distribuidos en ${data.perfiles.length} categorías`}
                 actions={editingSection === 'perfiles'
                   ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
                   : <EditButton onClick={() => startEdit('perfiles')} />}
@@ -1139,8 +1200,8 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
                       ) : (
                         <>
                           <td className="py-3 text-[12.5px]" style={{ color: '#001B4B' }}>{p.categoria}</td>
-                          <td className="py-3 text-right text-[13px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{p.headcount}</td>
-                          <td className="py-3 text-right text-[12px]" style={{ color: '#5B6478' }}>{p.experiencia}a</td>
+                          <td className="py-3 text-right text-[13px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{formatNumber(p.headcount)}</td>
+                          <td className="py-3 text-right text-[12px]" style={{ color: '#5B6478' }}>{isBlankNumber(p.experiencia) ? '—' : `${p.experiencia}a`}</td>
                           <td className="py-3 pl-4">
                             <div className="flex gap-1 flex-wrap">
                               {p.certs.length > 0 ? p.certs.map(c => (
@@ -1274,7 +1335,7 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
                     ) : (
                       <>
                         <div className="w-14 text-right" style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '18px', fontWeight: 500, color: '#0066FF' }}>
-                          {c.peso}<span className="text-[12px]" style={{ color: '#5B6478' }}>%</span>
+                          {isBlankNumber(c.peso) ? '—' : <>{c.peso}<span className="text-[12px]" style={{ color: '#5B6478' }}>%</span></>}
                         </div>
                         <div className="flex-1">
                           <div className="text-[13px]" style={{ color: '#001B4B', fontWeight: 500 }}>{c.criterio}</div>
@@ -1283,7 +1344,7 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
                           </div>
                         </div>
                         <div className="w-32 h-2 rounded-full overflow-hidden" style={{ background: '#E5E9F0' }}>
-                          <div className="h-full rounded-full" style={{ width: `${c.peso}%`, background: c.tipo === 'automatico' ? '#0066FF' : '#5B6478' }} />
+                          <div className="h-full rounded-full" style={{ width: `${isBlankNumber(c.peso) ? 0 : c.peso}%`, background: c.tipo === 'automatico' ? '#0066FF' : '#5B6478' }} />
                         </div>
                       </>
                     )}

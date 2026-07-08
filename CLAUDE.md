@@ -193,6 +193,7 @@ npm run dev:api       # = vercel dev, sirve frontend + /api juntos
 - [ ] ~~Vista de comparativa entre dos pliegos.~~ Aparcada mientras se trabaja `feat/connect-api`; retomar después.
 - [x] Histograma de importes por organismo en dashboard — barras horizontales (una por organismo, agregando `importe` si se repite), ordenadas de mayor a menor, bajo la tabla de expedientes.
 - [x] KPI "Tiempo medio de extracción" sustituida por "Importe medio" (junto a "Importe agregado"), por ser más accionable para presales.
+- [x] Edición manual de los campos de análisis — botón "Editar" por sección (no global) en cada `SectionCard` de `Analysis`, con "Guardar"/"Cancelar". Al guardar `lotes`/`perfiles`, la confianza de esas filas pasa a 100% (verificado por humano). Sin backend todavía: los cambios viven en el estado de React de `App` (`onUpdateAnalysis` actualiza `pliegos` y `selectedPliego`), sobreviven navegando dashboard↔análisis en la sesión, se pierden al recargar. No cubre añadir/quitar filas ni los campos de cabecera (`pliego.importe`, `pliego.lotes`, etc.) — posible fast-follow.
 
 **Medio plazo (versión funcional)**:
 - [x] Conectar a la **API de Anthropic Claude** para la extracción — implementado en rama `feat/connect-api` (`api/analyze.js`, modelo configurable por `ANTHROPIC_MODEL`, PDF base64 + `messages.create()` + Structured Outputs). **Probado con un pliego real y confirmado que funciona.** Pendiente de PR/merge a `main`.

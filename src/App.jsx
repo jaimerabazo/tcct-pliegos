@@ -4,7 +4,7 @@ import {
   Download, Wand2, ChevronRight, TrendingUp, Euro, CheckCircle2,
   Package, Users, Shield, Scale, AlertTriangle, Calendar, FileText,
   Zap, ArrowUpRight, Filter, MoreHorizontal, Sparkles, Building2,
-  UploadCloud, X, Loader2
+  UploadCloud, X, Loader2, Pencil
 } from 'lucide-react';
 
 // ---------- MOCK DATA ----------
@@ -175,20 +175,30 @@ const MOCK_ANALYSIS = {
 
 // ---------- HELPERS ----------
 
+const isBlankNumber = (v) => v === '' || v === null || v === undefined || Number.isNaN(v);
+
+const formatNumber = (n) => (isBlankNumber(n) ? '—' : n);
+
 const formatEuro = (n) => {
+  if (isBlankNumber(n)) return '—';
   if (n >= 1000000) return `${(n / 1000000).toFixed(2)}M €`;
   if (n >= 1000) return `${(n / 1000).toFixed(0)}K €`;
   return `${n} €`;
 };
 
-const formatEuroFull = (n) => new Intl.NumberFormat('es-ES', {
+const formatEuroFull = (n) => (isBlankNumber(n) ? '—' : new Intl.NumberFormat('es-ES', {
   style: 'currency', currency: 'EUR', maximumFractionDigits: 0
-}).format(n);
+}).format(n));
 
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const formatShortDate = (d) => `${String(d.getDate()).padStart(2, '0')} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`;
 
 const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+const listToText = (arr) => (arr || []).join(', ');
+const textToList = (str) => str.split(',').map(s => s.trim()).filter(Boolean);
+const linesToText = (arr) => (arr || []).join('\n');
+const textToLines = (str) => str.split('\n').map(s => s.trim()).filter(Boolean);
 
 const StatusBadge = ({ estado }) => {
   const config = {
@@ -724,7 +734,7 @@ const SectionCard = ({ children, className = '' }) => (
   </div>
 );
 
-const SectionTitle = ({ icon: Icon, title, subtitle }) => (
+const SectionTitle = ({ icon: Icon, title, subtitle, actions }) => (
   <div className="flex items-start justify-between mb-5">
     <div>
       <div className="flex items-center gap-2 mb-1">
@@ -735,7 +745,91 @@ const SectionTitle = ({ icon: Icon, title, subtitle }) => (
       </div>
       {subtitle && <p className="text-[12px]" style={{ color: '#5B6478' }}>{subtitle}</p>}
     </div>
+    {actions}
   </div>
+);
+
+const EditButton = ({ onClick }) => (
+  <button
+    onClick={onClick}
+    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[12px] transition shrink-0"
+    style={{ borderColor: '#E5E9F0', color: '#5B6478' }}
+    onMouseEnter={e => { e.currentTarget.style.color = '#0066FF'; e.currentTarget.style.borderColor = '#0066FF'; }}
+    onMouseLeave={e => { e.currentTarget.style.color = '#5B6478'; e.currentTarget.style.borderColor = '#E5E9F0'; }}
+  >
+    <Pencil size={12} strokeWidth={1.8} />
+    Editar
+  </button>
+);
+
+const SaveCancelButtons = ({ onSave, onCancel }) => (
+  <div className="flex items-center gap-2 shrink-0">
+    <button
+      onClick={onCancel}
+      className="px-2.5 py-1.5 rounded-md text-[12px] transition"
+      style={{ color: '#5B6478' }}
+      onMouseEnter={e => e.currentTarget.style.background = '#F5F7FA'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    >
+      Cancelar
+    </button>
+    <button
+      onClick={onSave}
+      className="px-2.5 py-1.5 rounded-md text-[12px] transition"
+      style={{ background: '#0066FF', color: 'white', fontWeight: 500 }}
+      onMouseEnter={e => e.currentTarget.style.background = '#0044CC'}
+      onMouseLeave={e => e.currentTarget.style.background = '#0066FF'}
+    >
+      Guardar
+    </button>
+  </div>
+);
+
+const fieldStyle = { borderColor: '#E5E9F0', color: '#001B4B' };
+
+const TextField = ({ value, onChange, mono = false, className = '' }) => (
+  <input
+    type="text"
+    value={value}
+    onChange={e => onChange(e.target.value)}
+    className={`w-full px-2.5 py-1.5 rounded-md border text-[13px] ${className}`}
+    style={{ ...fieldStyle, fontFamily: mono ? '"JetBrains Mono", monospace' : undefined }}
+  />
+);
+
+const NumberField = ({ value, onChange, mono = true, className = '' }) => (
+  <input
+    type="number"
+    value={value ?? ''}
+    onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+    className={`w-full px-2.5 py-1.5 rounded-md border text-[13px] ${className}`}
+    style={{ ...fieldStyle, fontFamily: mono ? '"JetBrains Mono", monospace' : undefined }}
+  />
+);
+
+const TextAreaField = ({ value, onChange, rows = 3, className = '' }) => (
+  <textarea
+    value={value}
+    onChange={e => onChange(e.target.value)}
+    rows={rows}
+    className={`w-full px-2.5 py-1.5 rounded-md border text-[13px] ${className}`}
+    style={{ ...fieldStyle, lineHeight: 1.5 }}
+  />
+);
+
+const SelectField = ({ value, onChange, options, className = '' }) => (
+  <select
+    value={value}
+    onChange={e => onChange(e.target.value)}
+    className={`w-full px-2.5 py-1.5 rounded-md border text-[13px] bg-white ${className}`}
+    style={fieldStyle}
+  >
+    {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+  </select>
+);
+
+const FieldLabel = ({ children }) => (
+  <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>{children}</div>
 );
 
 const SECTIONS = [
@@ -748,15 +842,106 @@ const SECTIONS = [
   { id: 'plazos', label: 'Plazos e hitos', icon: Calendar },
 ];
 
-const Analysis = ({ pliego, onBack }) => {
+const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
   const [section, setSection] = useState('resumen');
+  const [editingSection, setEditingSection] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [draftInitial, setDraftInitial] = useState(null); // snapshot JSON del draft al empezar a editar
   const data = pliego.analysisData || MOCK_ANALYSIS[pliego.id] || MOCK_ANALYSIS['2026-7008']; // fallback a demo
+
+  const buildDraft = (sectionId) => {
+    if (sectionId === 'resumen') {
+      return { ...structuredClone(data.resumen), ccnStic: [...data.marco.ccnStic], normativa: [...data.marco.normativa] };
+    }
+    return structuredClone(data[sectionId]);
+  };
+
+  const hasUnsavedChanges = () =>
+    editingSection !== null && draftInitial !== null && JSON.stringify(draft) !== draftInitial;
+
+  const confirmDiscardIfNeeded = () => {
+    if (!hasUnsavedChanges()) return true;
+    return window.confirm('Tienes cambios sin guardar en la sección que estás editando. Se perderán si continúas. ¿Descartar los cambios?');
+  };
+
+  const startEdit = (sectionId) => {
+    if (editingSection && editingSection !== sectionId && !confirmDiscardIfNeeded()) return;
+    const d = buildDraft(sectionId);
+    setDraft(d);
+    setDraftInitial(JSON.stringify(d));
+    setEditingSection(sectionId);
+  };
+
+  const cancelEdit = () => {
+    setEditingSection(null);
+    setDraft(null);
+    setDraftInitial(null);
+  };
+
+  const goToSection = (sectionId) => {
+    if (sectionId === section) return;
+    if (!confirmDiscardIfNeeded()) return;
+    if (editingSection) cancelEdit();
+    setSection(sectionId);
+  };
+
+  const handleBack = () => {
+    if (!confirmDiscardIfNeeded()) return;
+    onBack();
+  };
+
+  const collectEmptyNumbers = () => {
+    const empty = [];
+    if (editingSection === 'lotes') {
+      draft.forEach((lote, i) => { if (isBlankNumber(lote.importe)) empty.push(`Lote ${i + 1} · importe`); });
+    } else if (editingSection === 'perfiles') {
+      draft.forEach((p, i) => {
+        const label = p.categoria || `Perfil ${i + 1}`;
+        if (isBlankNumber(p.headcount)) empty.push(`${label} · nº recursos`);
+        if (isBlankNumber(p.experiencia)) empty.push(`${label} · experiencia`);
+      });
+    } else if (editingSection === 'solvencia') {
+      if (isBlankNumber(draft.tecnica?.volumenNegocio)) empty.push('Volumen de negocio');
+      if (isBlankNumber(draft.economica?.seguroRC)) empty.push('Seguro RC');
+      if (isBlankNumber(draft.economica?.capitalMinimo)) empty.push('Capital mínimo');
+    } else if (editingSection === 'criterios') {
+      draft.forEach((c, i) => { if (isBlankNumber(c.peso)) empty.push(`${c.criterio || `Criterio ${i + 1}`} · peso`); });
+    }
+    return empty;
+  };
+
+  const saveEdit = () => {
+    const emptyNumbers = collectEmptyNumbers();
+    if (emptyNumbers.length > 0) {
+      const ok = window.confirm(
+        `Hay campos numéricos vacíos que se guardarán sin valor:\n\n· ${emptyNumbers.join('\n· ')}\n\n¿Guardar de todas formas?`
+      );
+      if (!ok) return;
+    }
+    let updated;
+    if (editingSection === 'resumen') {
+      const { ccnStic, normativa, ...resumen } = draft;
+      updated = { ...data, resumen, marco: { ...data.marco, ccnStic, normativa } };
+    } else if (editingSection === 'lotes' || editingSection === 'perfiles') {
+      updated = { ...data, [editingSection]: draft.map(row => ({ ...row, confianza: 100 })) };
+    } else {
+      updated = { ...data, [editingSection]: draft };
+    }
+    onUpdateAnalysis(pliego.id, updated);
+    setEditingSection(null);
+    setDraft(null);
+    setDraftInitial(null);
+  };
+
+  const updateDraftRow = (idx, field, value) => {
+    setDraft(prev => prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row)));
+  };
 
   return (
     <div className="max-w-[1200px]">
       {/* Toolbar */}
       <div className="flex items-center justify-between px-8 py-4 border-b" style={{ borderColor: '#E5E9F0', background: 'white' }}>
-        <button onClick={onBack} className="flex items-center gap-1.5 text-[13px]" style={{ color: '#5B6478' }}
+        <button onClick={handleBack} className="flex items-center gap-1.5 text-[13px]" style={{ color: '#5B6478' }}
           onMouseEnter={e => e.currentTarget.style.color = '#001B4B'}
           onMouseLeave={e => e.currentTarget.style.color = '#5B6478'}>
           <ArrowLeft size={14} strokeWidth={1.8} />
@@ -829,7 +1014,7 @@ const Analysis = ({ pliego, onBack }) => {
           {SECTIONS.map(s => (
             <button
               key={s.id}
-              onClick={() => setSection(s.id)}
+              onClick={() => goToSection(s.id)}
               className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-left rounded-md transition mb-0.5"
               style={{
                 color: section === s.id ? '#0066FF' : '#5B6478',
@@ -851,62 +1036,126 @@ const Analysis = ({ pliego, onBack }) => {
         <div className="min-w-0">
           {section === 'resumen' && (
             <SectionCard>
-              <SectionTitle icon={FileText} title="Resumen ejecutivo" />
-              <p className="text-[14px] mb-6" style={{ color: '#001B4B', lineHeight: 1.6 }}>
-                {data.resumen.objeto}
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>Procedimiento</div>
-                  <div className="text-[13px]" style={{ color: '#001B4B' }}>{data.resumen.procedimiento}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>Duración</div>
-                  <div className="text-[13px]" style={{ color: '#001B4B' }}>{data.resumen.duracion} + {data.resumen.prorrogas}</div>
-                </div>
-                <div className="col-span-2">
-                  <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>Códigos CPV</div>
-                  <div className="flex gap-2 flex-wrap">
-                    {data.resumen.cpv.map(c => (
-                      <span key={c} className="px-2 py-0.5 rounded text-[11px]" style={{ background: '#F0F5FF', color: '#0044CC', fontFamily: '"JetBrains Mono", monospace' }}>
-                        {c}
-                      </span>
-                    ))}
+              <SectionTitle
+                icon={FileText}
+                title="Resumen ejecutivo"
+                actions={editingSection === 'resumen'
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  : <EditButton onClick={() => startEdit('resumen')} />}
+              />
+              {editingSection === 'resumen' ? (
+                <div className="space-y-4">
+                  <div>
+                    <FieldLabel>Objeto</FieldLabel>
+                    <TextAreaField value={draft.objeto} onChange={v => setDraft({ ...draft, objeto: v })} rows={4} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <FieldLabel>Procedimiento</FieldLabel>
+                      <TextField value={draft.procedimiento} onChange={v => setDraft({ ...draft, procedimiento: v })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <FieldLabel>Duración</FieldLabel>
+                        <TextField value={draft.duracion} onChange={v => setDraft({ ...draft, duracion: v })} />
+                      </div>
+                      <div>
+                        <FieldLabel>Prórrogas</FieldLabel>
+                        <TextField value={draft.prorrogas} onChange={v => setDraft({ ...draft, prorrogas: v })} />
+                      </div>
+                    </div>
+                    <div className="col-span-2">
+                      <FieldLabel>Códigos CPV (separados por coma)</FieldLabel>
+                      <TextField mono value={listToText(draft.cpv)} onChange={v => setDraft({ ...draft, cpv: textToList(v) })} />
+                    </div>
+                    <div>
+                      <FieldLabel>CCN-STIC (separados por coma)</FieldLabel>
+                      <TextField value={listToText(draft.ccnStic)} onChange={v => setDraft({ ...draft, ccnStic: textToList(v) })} />
+                    </div>
+                    <div>
+                      <FieldLabel>Otra normativa (separados por coma)</FieldLabel>
+                      <TextField value={listToText(draft.normativa)} onChange={v => setDraft({ ...draft, normativa: textToList(v) })} />
+                    </div>
                   </div>
                 </div>
-                <div className="col-span-2">
-                  <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>Marco normativo</div>
-                  <div className="flex gap-2 flex-wrap">
-                    {[...data.marco.ccnStic, ...data.marco.normativa].map(n => (
-                      <span key={n} className="px-2 py-0.5 rounded text-[11px]" style={{ background: '#F5F7FA', color: '#001B4B' }}>{n}</span>
-                    ))}
+              ) : (
+                <>
+                  <p className="text-[14px] mb-6" style={{ color: '#001B4B', lineHeight: 1.6 }}>
+                    {data.resumen.objeto}
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>Procedimiento</div>
+                      <div className="text-[13px]" style={{ color: '#001B4B' }}>{data.resumen.procedimiento}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>Duración</div>
+                      <div className="text-[13px]" style={{ color: '#001B4B' }}>{data.resumen.duracion} + {data.resumen.prorrogas}</div>
+                    </div>
+                    <div className="col-span-2">
+                      <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>Códigos CPV</div>
+                      <div className="flex gap-2 flex-wrap">
+                        {data.resumen.cpv.map(c => (
+                          <span key={c} className="px-2 py-0.5 rounded text-[11px]" style={{ background: '#F0F5FF', color: '#0044CC', fontFamily: '"JetBrains Mono", monospace' }}>
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="col-span-2">
+                      <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>Marco normativo</div>
+                      <div className="flex gap-2 flex-wrap">
+                        {[...data.marco.ccnStic, ...data.marco.normativa].map(n => (
+                          <span key={n} className="px-2 py-0.5 rounded text-[11px]" style={{ background: '#F5F7FA', color: '#001B4B' }}>{n}</span>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                </>
+              )}
             </SectionCard>
           )}
 
           {section === 'lotes' && (
             <SectionCard>
-              <SectionTitle icon={Package} title="Lotes" subtitle={`${data.lotes.length} lotes por un importe agregado de ${formatEuroFull(data.lotes.reduce((a, l) => a + l.importe, 0))}`} />
+              <SectionTitle
+                icon={Package}
+                title="Lotes"
+                subtitle={`${data.lotes.length} lotes por un importe agregado de ${formatEuroFull(data.lotes.reduce((a, l) => a + (Number(l.importe) || 0), 0))}`}
+                actions={editingSection === 'lotes'
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  : <EditButton onClick={() => startEdit('lotes')} />}
+              />
               <div className="space-y-2">
-                {data.lotes.map(lote => (
+                {(editingSection === 'lotes' ? draft : data.lotes).map((lote, idx) => (
                   <div key={lote.numero} className="flex items-start gap-4 p-4 rounded-md border" style={{ borderColor: '#E5E9F0' }}>
                     <div className="w-10 h-10 rounded-md flex items-center justify-center shrink-0" style={{ background: '#F0F5FF' }}>
                       <span style={{ fontFamily: '"Space Grotesk", sans-serif', fontWeight: 500, fontSize: '15px', color: '#0066FF' }}>{lote.numero}</span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[14px]" style={{ color: '#001B4B', fontWeight: 500 }}>{lote.descripcion}</div>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-[11px]" style={{ color: '#5B6478', fontFamily: '"JetBrains Mono", monospace' }}>CPV {lote.cpv}</span>
-                        <ConfidenceBadge value={lote.confianza} />
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '15px', fontWeight: 500, color: '#001B4B' }}>
-                        {formatEuroFull(lote.importe)}
-                      </div>
-                    </div>
+                    {editingSection === 'lotes' ? (
+                      <>
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <TextField value={lote.descripcion} onChange={v => updateDraftRow(idx, 'descripcion', v)} />
+                          <TextField mono value={lote.cpv} onChange={v => updateDraftRow(idx, 'cpv', v)} className="max-w-[180px]" />
+                        </div>
+                        <NumberField value={lote.importe} onChange={v => updateDraftRow(idx, 'importe', v)} className="max-w-[160px]" />
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[14px]" style={{ color: '#001B4B', fontWeight: 500 }}>{lote.descripcion}</div>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-[11px]" style={{ color: '#5B6478', fontFamily: '"JetBrains Mono", monospace' }}>CPV {lote.cpv}</span>
+                            <ConfidenceBadge value={lote.confianza} />
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '15px', fontWeight: 500, color: '#001B4B' }}>
+                            {formatEuroFull(lote.importe)}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
@@ -915,7 +1164,14 @@ const Analysis = ({ pliego, onBack }) => {
 
           {section === 'perfiles' && (
             <SectionCard>
-              <SectionTitle icon={Users} title="Perfiles requeridos (STS)" subtitle={`${data.perfiles.reduce((a, p) => a + p.headcount, 0)} recursos totales distribuidos en ${data.perfiles.length} categorías`} />
+              <SectionTitle
+                icon={Users}
+                title="Perfiles requeridos (STS)"
+                subtitle={`${data.perfiles.reduce((a, p) => a + (Number(p.headcount) || 0), 0)} recursos totales distribuidos en ${data.perfiles.length} categorías`}
+                actions={editingSection === 'perfiles'
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  : <EditButton onClick={() => startEdit('perfiles')} />}
+              />
               <table className="w-full">
                 <thead>
                   <tr style={{ borderBottom: '1px solid #E5E9F0' }}>
@@ -928,22 +1184,34 @@ const Analysis = ({ pliego, onBack }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.perfiles.map(p => (
+                  {(editingSection === 'perfiles' ? draft : data.perfiles).map((p, idx) => (
                     <tr key={p.codigo} style={{ borderBottom: '1px solid #F0F2F5' }}>
                       <td className="py-3">
                         <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '12px', fontWeight: 500, color: '#0066FF' }}>{p.codigo}</span>
                       </td>
-                      <td className="py-3 text-[12.5px]" style={{ color: '#001B4B' }}>{p.categoria}</td>
-                      <td className="py-3 text-right text-[13px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{p.headcount}</td>
-                      <td className="py-3 text-right text-[12px]" style={{ color: '#5B6478' }}>{p.experiencia}a</td>
-                      <td className="py-3 pl-4">
-                        <div className="flex gap-1 flex-wrap">
-                          {p.certs.length > 0 ? p.certs.map(c => (
-                            <span key={c} className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: '#F5F7FA', color: '#5B6478' }}>{c}</span>
-                          )) : <span className="text-[11px]" style={{ color: '#5B6478' }}>—</span>}
-                        </div>
-                      </td>
-                      <td className="py-3 text-right"><ConfidenceBadge value={p.confianza} /></td>
+                      {editingSection === 'perfiles' ? (
+                        <>
+                          <td className="py-2 pr-2"><TextField value={p.categoria} onChange={v => updateDraftRow(idx, 'categoria', v)} /></td>
+                          <td className="py-2 px-2"><NumberField value={p.headcount} onChange={v => updateDraftRow(idx, 'headcount', v)} /></td>
+                          <td className="py-2 px-2"><NumberField value={p.experiencia} onChange={v => updateDraftRow(idx, 'experiencia', v)} /></td>
+                          <td className="py-2 pl-4"><TextField value={listToText(p.certs)} onChange={v => updateDraftRow(idx, 'certs', textToList(v))} /></td>
+                          <td className="py-3 text-right"><ConfidenceBadge value={100} /></td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-3 text-[12.5px]" style={{ color: '#001B4B' }}>{p.categoria}</td>
+                          <td className="py-3 text-right text-[13px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{formatNumber(p.headcount)}</td>
+                          <td className="py-3 text-right text-[12px]" style={{ color: '#5B6478' }}>{isBlankNumber(p.experiencia) ? '—' : `${p.experiencia}a`}</td>
+                          <td className="py-3 pl-4">
+                            <div className="flex gap-1 flex-wrap">
+                              {p.certs.length > 0 ? p.certs.map(c => (
+                                <span key={c} className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: '#F5F7FA', color: '#5B6478' }}>{c}</span>
+                              )) : <span className="text-[11px]" style={{ color: '#5B6478' }}>—</span>}
+                            </div>
+                          </td>
+                          <td className="py-3 text-right"><ConfidenceBadge value={p.confianza} /></td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -953,68 +1221,133 @@ const Analysis = ({ pliego, onBack }) => {
 
           {section === 'solvencia' && (
             <SectionCard>
-              <SectionTitle icon={Shield} title="Requisitos de solvencia" />
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <div className="text-[11px] uppercase tracking-wider mb-3" style={{ color: '#0066FF', letterSpacing: '0.08em', fontWeight: 500 }}>Solvencia técnica</div>
+              <SectionTitle
+                icon={Shield}
+                title="Requisitos de solvencia"
+                actions={editingSection === 'solvencia'
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  : <EditButton onClick={() => startEdit('solvencia')} />}
+              />
+              {editingSection === 'solvencia' ? (
+                <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-3">
+                    <div className="text-[11px] uppercase tracking-wider mb-1" style={{ color: '#0066FF', letterSpacing: '0.08em', fontWeight: 500 }}>Solvencia técnica</div>
                     <div>
-                      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Experiencia mínima</div>
-                      <div className="text-[13px]" style={{ color: '#001B4B' }}>{data.solvencia.tecnica.experienciaMinima}</div>
+                      <FieldLabel>Experiencia mínima</FieldLabel>
+                      <TextField value={draft.tecnica.experienciaMinima} onChange={v => setDraft({ ...draft, tecnica: { ...draft.tecnica, experienciaMinima: v } })} />
                     </div>
                     <div>
-                      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Volumen negocio anual</div>
-                      <div className="text-[14px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{formatEuroFull(data.solvencia.tecnica.volumenNegocio)}</div>
+                      <FieldLabel>Volumen negocio anual</FieldLabel>
+                      <NumberField value={draft.tecnica.volumenNegocio} onChange={v => setDraft({ ...draft, tecnica: { ...draft.tecnica, volumenNegocio: v } })} />
                     </div>
                     <div>
-                      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Clasificación</div>
-                      <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '13px', color: '#001B4B' }}>{data.solvencia.tecnica.clasificacion}</div>
+                      <FieldLabel>Clasificación</FieldLabel>
+                      <TextField mono value={draft.tecnica.clasificacion} onChange={v => setDraft({ ...draft, tecnica: { ...draft.tecnica, clasificacion: v } })} />
                     </div>
                     <div>
-                      <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478' }}>Certificaciones</div>
-                      <div className="flex gap-1.5 flex-wrap">
-                        {data.solvencia.tecnica.certificaciones.map(c => (
-                          <span key={c} className="px-2 py-0.5 rounded text-[11px]" style={{ background: '#F0F5FF', color: '#0044CC' }}>{c}</span>
-                        ))}
+                      <FieldLabel>Certificaciones (separadas por coma)</FieldLabel>
+                      <TextField value={listToText(draft.tecnica.certificaciones)} onChange={v => setDraft({ ...draft, tecnica: { ...draft.tecnica, certificaciones: textToList(v) } })} />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="text-[11px] uppercase tracking-wider mb-1" style={{ color: '#0066FF', letterSpacing: '0.08em', fontWeight: 500 }}>Solvencia económica</div>
+                    <div>
+                      <FieldLabel>Seguro RC mínimo</FieldLabel>
+                      <NumberField value={draft.economica.seguroRC} onChange={v => setDraft({ ...draft, economica: { ...draft.economica, seguroRC: v } })} />
+                    </div>
+                    <div>
+                      <FieldLabel>Capital social mínimo</FieldLabel>
+                      <NumberField value={draft.economica.capitalMinimo} onChange={v => setDraft({ ...draft, economica: { ...draft.economica, capitalMinimo: v } })} />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider mb-3" style={{ color: '#0066FF', letterSpacing: '0.08em', fontWeight: 500 }}>Solvencia técnica</div>
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Experiencia mínima</div>
+                        <div className="text-[13px]" style={{ color: '#001B4B' }}>{data.solvencia.tecnica.experienciaMinima}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Volumen negocio anual</div>
+                        <div className="text-[14px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{formatEuroFull(data.solvencia.tecnica.volumenNegocio)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Clasificación</div>
+                        <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '13px', color: '#001B4B' }}>{data.solvencia.tecnica.clasificacion}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478' }}>Certificaciones</div>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {data.solvencia.tecnica.certificaciones.map(c => (
+                            <span key={c} className="px-2 py-0.5 rounded text-[11px]" style={{ background: '#F0F5FF', color: '#0044CC' }}>{c}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wider mb-3" style={{ color: '#0066FF', letterSpacing: '0.08em', fontWeight: 500 }}>Solvencia económica</div>
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Seguro RC mínimo</div>
+                        <div className="text-[14px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{formatEuroFull(data.solvencia.economica.seguroRC)}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Capital social mínimo</div>
+                        <div className="text-[14px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{formatEuroFull(data.solvencia.economica.capitalMinimo)}</div>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-wider mb-3" style={{ color: '#0066FF', letterSpacing: '0.08em', fontWeight: 500 }}>Solvencia económica</div>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Seguro RC mínimo</div>
-                      <div className="text-[14px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{formatEuroFull(data.solvencia.economica.seguroRC)}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>Capital social mínimo</div>
-                      <div className="text-[14px]" style={{ color: '#001B4B', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>{formatEuroFull(data.solvencia.economica.capitalMinimo)}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              )}
             </SectionCard>
           )}
 
           {section === 'criterios' && (
             <SectionCard>
-              <SectionTitle icon={Scale} title="Criterios de adjudicación" subtitle="Pesos porcentuales por criterio, distinguiendo evaluación automática (fórmula) y de juicio de valor" />
+              <SectionTitle
+                icon={Scale}
+                title="Criterios de adjudicación"
+                subtitle="Pesos porcentuales por criterio, distinguiendo evaluación automática (fórmula) y de juicio de valor"
+                actions={editingSection === 'criterios'
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  : <EditButton onClick={() => startEdit('criterios')} />}
+              />
               <div className="space-y-2">
-                {data.criterios.map((c, idx) => (
+                {(editingSection === 'criterios' ? draft : data.criterios).map((c, idx) => (
                   <div key={idx} className="flex items-center gap-4 p-3 rounded-md" style={{ background: '#FAFBFC' }}>
-                    <div className="w-14 text-right" style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '18px', fontWeight: 500, color: '#0066FF' }}>
-                      {c.peso}<span className="text-[12px]" style={{ color: '#5B6478' }}>%</span>
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-[13px]" style={{ color: '#001B4B', fontWeight: 500 }}>{c.criterio}</div>
-                      <div className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: c.tipo === 'automatico' ? '#0066FF' : '#5B6478', letterSpacing: '0.08em' }}>
-                        {c.tipo === 'automatico' ? 'Evaluación automática' : 'Juicio de valor'}
-                      </div>
-                    </div>
-                    <div className="w-32 h-2 rounded-full overflow-hidden" style={{ background: '#E5E9F0' }}>
-                      <div className="h-full rounded-full" style={{ width: `${c.peso}%`, background: c.tipo === 'automatico' ? '#0066FF' : '#5B6478' }} />
-                    </div>
+                    {editingSection === 'criterios' ? (
+                      <>
+                        <NumberField value={c.peso} onChange={v => updateDraftRow(idx, 'peso', v)} className="max-w-[80px] shrink-0" />
+                        <div className="flex-1 space-y-1.5">
+                          <TextField value={c.criterio} onChange={v => updateDraftRow(idx, 'criterio', v)} />
+                          <SelectField
+                            value={c.tipo}
+                            onChange={v => updateDraftRow(idx, 'tipo', v)}
+                            className="max-w-[220px]"
+                            options={[{ value: 'automatico', label: 'Evaluación automática' }, { value: 'juicio', label: 'Juicio de valor' }]}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-14 text-right" style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '18px', fontWeight: 500, color: '#0066FF' }}>
+                          {isBlankNumber(c.peso) ? '—' : <>{c.peso}<span className="text-[12px]" style={{ color: '#5B6478' }}>%</span></>}
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-[13px]" style={{ color: '#001B4B', fontWeight: 500 }}>{c.criterio}</div>
+                          <div className="text-[10px] uppercase tracking-wider mt-0.5" style={{ color: c.tipo === 'automatico' ? '#0066FF' : '#5B6478', letterSpacing: '0.08em' }}>
+                            {c.tipo === 'automatico' ? 'Evaluación automática' : 'Juicio de valor'}
+                          </div>
+                        </div>
+                        <div className="w-32 h-2 rounded-full overflow-hidden" style={{ background: '#E5E9F0' }}>
+                          <div className="h-full rounded-full" style={{ width: `${isBlankNumber(c.peso) ? 0 : c.peso}%`, background: c.tipo === 'automatico' ? '#0066FF' : '#5B6478' }} />
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1023,15 +1356,34 @@ const Analysis = ({ pliego, onBack }) => {
 
           {section === 'penalizaciones' && (
             <SectionCard>
-              <SectionTitle icon={AlertTriangle} title="Penalizaciones" subtitle="Cláusulas de penalización identificadas en el PCAP" />
+              <SectionTitle
+                icon={AlertTriangle}
+                title="Penalizaciones"
+                subtitle="Cláusulas de penalización identificadas en el PCAP"
+                actions={editingSection === 'penalizaciones'
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  : <EditButton onClick={() => startEdit('penalizaciones')} />}
+              />
               <div className="space-y-3">
-                {data.penalizaciones.map((p, idx) => (
+                {(editingSection === 'penalizaciones' ? draft : data.penalizaciones).map((p, idx) => (
                   <div key={idx} className="p-4 rounded-md border" style={{ borderColor: '#E5E9F0' }}>
-                    <div className="flex items-start justify-between gap-4 mb-1">
-                      <div className="text-[13px]" style={{ color: '#001B4B', fontWeight: 500 }}>{p.tipo}</div>
-                      <div className="text-[11px] px-2 py-0.5 rounded shrink-0" style={{ background: '#FCEBEB', color: '#8B1F1F' }}>{p.importe}</div>
-                    </div>
-                    <div className="text-[12px]" style={{ color: '#5B6478' }}>{p.descripcion}</div>
+                    {editingSection === 'penalizaciones' ? (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <TextField value={p.tipo} onChange={v => updateDraftRow(idx, 'tipo', v)} />
+                          <TextField value={p.importe} onChange={v => updateDraftRow(idx, 'importe', v)} />
+                        </div>
+                        <TextAreaField value={p.descripcion} onChange={v => updateDraftRow(idx, 'descripcion', v)} rows={2} />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-start justify-between gap-4 mb-1">
+                          <div className="text-[13px]" style={{ color: '#001B4B', fontWeight: 500 }}>{p.tipo}</div>
+                          <div className="text-[11px] px-2 py-0.5 rounded shrink-0" style={{ background: '#FCEBEB', color: '#8B1F1F' }}>{p.importe}</div>
+                        </div>
+                        <div className="text-[12px]" style={{ color: '#5B6478' }}>{p.descripcion}</div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1040,31 +1392,66 @@ const Analysis = ({ pliego, onBack }) => {
 
           {section === 'plazos' && (
             <SectionCard>
-              <SectionTitle icon={Calendar} title="Plazos e hitos" />
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                {[
-                  { label: 'Cierre de ofertas', value: data.plazos.limite, highlight: true },
-                  { label: 'Apertura', value: data.plazos.apertura },
-                  { label: 'Formalización', value: data.plazos.formalizacion },
-                  { label: 'Inicio del servicio', value: data.plazos.inicio },
-                ].map((item, idx) => (
-                  <div key={idx} className="p-3 rounded-md" style={{ background: item.highlight ? '#F0F5FF' : '#FAFBFC' }}>
-                    <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>{item.label}</div>
-                    <div className="text-[13px]" style={{ color: item.highlight ? '#0066FF' : '#001B4B', fontWeight: 500 }}>{item.value}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="text-[11px] uppercase tracking-wider mb-3" style={{ color: '#0066FF', letterSpacing: '0.08em', fontWeight: 500 }}>Hitos del contrato</div>
-              <div className="space-y-2">
-                {data.plazos.hitos.map((h, idx) => (
-                  <div key={idx} className="flex items-center gap-3 text-[13px]" style={{ color: '#001B4B' }}>
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px]" style={{ background: '#F0F5FF', color: '#0066FF', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>
-                      {idx + 1}
+              <SectionTitle
+                icon={Calendar}
+                title="Plazos e hitos"
+                actions={editingSection === 'plazos'
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  : <EditButton onClick={() => startEdit('plazos')} />}
+              />
+              {editingSection === 'plazos' ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <FieldLabel>Cierre de ofertas</FieldLabel>
+                      <TextField value={draft.limite} onChange={v => setDraft({ ...draft, limite: v })} />
                     </div>
-                    {h}
+                    <div>
+                      <FieldLabel>Apertura</FieldLabel>
+                      <TextField value={draft.apertura} onChange={v => setDraft({ ...draft, apertura: v })} />
+                    </div>
+                    <div>
+                      <FieldLabel>Formalización</FieldLabel>
+                      <TextField value={draft.formalizacion} onChange={v => setDraft({ ...draft, formalizacion: v })} />
+                    </div>
+                    <div>
+                      <FieldLabel>Inicio del servicio</FieldLabel>
+                      <TextField value={draft.inicio} onChange={v => setDraft({ ...draft, inicio: v })} />
+                    </div>
                   </div>
-                ))}
-              </div>
+                  <div>
+                    <FieldLabel>Hitos del contrato (uno por línea)</FieldLabel>
+                    <TextAreaField value={linesToText(draft.hitos)} onChange={v => setDraft({ ...draft, hitos: textToLines(v) })} rows={5} />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    {[
+                      { label: 'Cierre de ofertas', value: data.plazos.limite, highlight: true },
+                      { label: 'Apertura', value: data.plazos.apertura },
+                      { label: 'Formalización', value: data.plazos.formalizacion },
+                      { label: 'Inicio del servicio', value: data.plazos.inicio },
+                    ].map((item, idx) => (
+                      <div key={idx} className="p-3 rounded-md" style={{ background: item.highlight ? '#F0F5FF' : '#FAFBFC' }}>
+                        <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: '#5B6478' }}>{item.label}</div>
+                        <div className="text-[13px]" style={{ color: item.highlight ? '#0066FF' : '#001B4B', fontWeight: 500 }}>{item.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[11px] uppercase tracking-wider mb-3" style={{ color: '#0066FF', letterSpacing: '0.08em', fontWeight: 500 }}>Hitos del contrato</div>
+                  <div className="space-y-2">
+                    {data.plazos.hitos.map((h, idx) => (
+                      <div key={idx} className="flex items-center gap-3 text-[13px]" style={{ color: '#001B4B' }}>
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px]" style={{ background: '#F0F5FF', color: '#0066FF', fontFamily: '"JetBrains Mono", monospace', fontWeight: 500 }}>
+                          {idx + 1}
+                        </div>
+                        {h}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </SectionCard>
           )}
         </div>
@@ -1099,13 +1486,18 @@ export default function App() {
     handleSelect(newPliego);
   };
 
+  const handleUpdateAnalysis = (pliegoId, updatedAnalysis) => {
+    setPliegos(prev => prev.map(p => (p.id === pliegoId ? { ...p, analysisData: updatedAnalysis } : p)));
+    setSelectedPliego(prev => (prev && prev.id === pliegoId ? { ...prev, analysisData: updatedAnalysis } : prev));
+  };
+
   return (
     <>
       <div className="min-h-screen flex" style={{ background: '#FAFBFC', fontFamily: '"Inter", -apple-system, sans-serif', color: '#001B4B' }}>
         <Sidebar view={view} setView={setView} />
         <main className="flex-1 overflow-auto">
           {view === 'dashboard' && <Dashboard pliegos={pliegos} onSelect={handleSelect} onNewAnalysis={() => setShowUploadModal(true)} />}
-          {view === 'analysis' && selectedPliego && <Analysis pliego={selectedPliego} onBack={() => setView('dashboard')} />}
+          {view === 'analysis' && selectedPliego && <Analysis pliego={selectedPliego} onBack={() => setView('dashboard')} onUpdateAnalysis={handleUpdateAnalysis} />}
         </main>
       </div>
       <UploadModal

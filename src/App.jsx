@@ -6,6 +6,11 @@ import {
   Zap, ArrowUpRight, Filter, MoreHorizontal, Sparkles, Building2,
   UploadCloud, X, Loader2, Pencil
 } from 'lucide-react';
+import {
+  isBlankNumber, formatNumber, formatEuro, formatEuroFull, formatShortDate, slugify,
+  listToText, textToList, linesToText, textToLines,
+  computeDashboardKpis, getLotesSumMismatch,
+} from './logic.js';
 
 // ---------- MOCK DATA ----------
 
@@ -174,31 +179,7 @@ const MOCK_ANALYSIS = {
 };
 
 // ---------- HELPERS ----------
-
-const isBlankNumber = (v) => v === '' || v === null || v === undefined || Number.isNaN(v);
-
-const formatNumber = (n) => (isBlankNumber(n) ? '—' : n);
-
-const formatEuro = (n) => {
-  if (isBlankNumber(n)) return '—';
-  if (n >= 1000000) return `${(n / 1000000).toFixed(2)}M €`;
-  if (n >= 1000) return `${(n / 1000).toFixed(0)}K €`;
-  return `${n} €`;
-};
-
-const formatEuroFull = (n) => (isBlankNumber(n) ? '—' : new Intl.NumberFormat('es-ES', {
-  style: 'currency', currency: 'EUR', maximumFractionDigits: 0
-}).format(n));
-
-const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-const formatShortDate = (d) => `${String(d.getDate()).padStart(2, '0')} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`;
-
-const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-
-const listToText = (arr) => (arr || []).join(', ');
-const textToList = (str) => str.split(',').map(s => s.trim()).filter(Boolean);
-const linesToText = (arr) => (arr || []).join('\n');
-const textToLines = (str) => str.split('\n').map(s => s.trim()).filter(Boolean);
+// (formato, texto y lógica de negocio pura viven en src/logic.js, importados arriba)
 
 const StatusBadge = ({ estado }) => {
   const config = {
@@ -591,7 +572,8 @@ const OrganismoBar = ({ organismo, importe, pct }) => (
   </div>
 );
 
-const Dashboard = ({ pliegos, onSelect, onNewAnalysis }) => {
+export const Dashboard = ({ pliegos, onSelect, onNewAnalysis }) => {
+  const kpis = computeDashboardKpis(pliegos);
   const importePorOrganismo = Object.values(
     pliegos.reduce((acc, p) => {
       if (!acc[p.organismo]) acc[p.organismo] = { organismo: p.organismo, importe: 0 };
@@ -622,10 +604,10 @@ const Dashboard = ({ pliegos, onSelect, onNewAnalysis }) => {
     </div>
 
     <div className="grid grid-cols-4 gap-4 mb-8">
-      <KpiCard label="Pliegos analizados (mes)" value="24" delta="+37%" icon={FileText} />
-      <KpiCard label="Importe agregado" value="86.2M €" delta="+22%" icon={Euro} mono />
-      <KpiCard label="Importe medio" value="3.59M €" delta="+8%" icon={Euro} mono />
-      <KpiCard label="Confianza media" value="94%" delta="+2%" icon={CheckCircle2} />
+      <KpiCard label="Pliegos analizados (mes)" value={kpis.count} delta="+37%" icon={FileText} />
+      <KpiCard label="Importe agregado" value={formatEuro(kpis.totalImporte)} delta="+22%" icon={Euro} mono />
+      <KpiCard label="Importe medio" value={formatEuro(kpis.avgImporte)} delta="+8%" icon={Euro} mono />
+      <KpiCard label="Confianza media" value={`${Math.round(kpis.avgConfianza)}%`} delta="+2%" icon={CheckCircle2} />
     </div>
 
     <div className="rounded-lg border overflow-hidden" style={{ borderColor: '#E5E9F0', background: 'white' }}>
@@ -842,7 +824,7 @@ const SECTIONS = [
   { id: 'plazos', label: 'Plazos e hitos', icon: Calendar },
 ];
 
-const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
+export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
   const [section, setSection] = useState('resumen');
   const [editingSection, setEditingSection] = useState(null);
   const [draft, setDraft] = useState(null);
@@ -1126,6 +1108,19 @@ const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
                   ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
                   : <EditButton onClick={() => startEdit('lotes')} />}
               />
+              {(() => {
+                const mismatch = getLotesSumMismatch(pliego, { lotes: editingSection === 'lotes' ? draft : data.lotes });
+                if (!mismatch) return null;
+                return (
+                  <div className="flex items-start gap-3 p-3 mb-4 rounded-md border" style={{ borderColor: '#F5C6C6', background: '#FCEBEB' }}>
+                    <AlertTriangle size={16} color="#8B1F1F" strokeWidth={1.8} className="shrink-0 mt-0.5" />
+                    <div className="text-[12.5px]" style={{ color: '#8B1F1F' }}>
+                      La suma de los lotes ({formatEuroFull(mismatch.lotesSum)}) no coincide con el importe total del pliego ({formatEuroFull(mismatch.pliegoImporte)}).
+                      Diferencia: {formatEuroFull(Math.abs(mismatch.diff))} {mismatch.diff > 0 ? 'de más' : 'de menos'}.
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="space-y-2">
                 {(editingSection === 'lotes' ? draft : data.lotes).map((lote, idx) => (
                   <div key={lote.numero} className="flex items-start gap-4 p-4 rounded-md border" style={{ borderColor: '#E5E9F0' }}>

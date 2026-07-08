@@ -66,7 +66,10 @@ React 18         UI
 Tailwind CSS 3   styling utility-first
 lucide-react     iconografía outline
 Google Fonts     Space Grotesk + Inter + JetBrains Mono
+Vitest 4         test runner (+ @testing-library/react, jsdom)
 ```
+
+**Testing**: `npm run test` (una vez), `npm run test:watch`, `npm run test:coverage`. La lógica de negocio pura vive en `src/logic.js` (formateo, `computeDashboardKpis`, `getLotesSumMismatch`) con tests en `src/logic.test.js` — umbral de cobertura ≥90% (líneas/funciones/branches/statements) configurado en `vitest.config.js`, acotado por ahora a `src/logic.js` (`coverage.include`). Regla acordada con Jaime: **toda feature nueva debe llevar tests con ≥90% de cobertura** de su lógica; se amplía el `include` según se vayan cubriendo más partes. `src/Dashboard.test.jsx` y `src/Analysis.test.jsx` son tests de integración ligeros con React Testing Library (no cuentan para el umbral, son un plus).
 
 **Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.parse()` con `output_config.format: json_schema` para la extracción. Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. Los pliegos aún no analizados con la API siguen viniendo de `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en `src/App.jsx`.
 
@@ -194,6 +197,8 @@ npm run dev:api       # = vercel dev, sirve frontend + /api juntos
 - [x] Histograma de importes por organismo en dashboard — barras horizontales (una por organismo, agregando `importe` si se repite), ordenadas de mayor a menor, bajo la tabla de expedientes.
 - [x] KPI "Tiempo medio de extracción" sustituida por "Importe medio" (junto a "Importe agregado"), por ser más accionable para presales.
 - [x] Edición manual de los campos de análisis — botón "Editar" por sección (no global) en cada `SectionCard` de `Analysis`, con "Guardar"/"Cancelar". Al guardar `lotes`/`perfiles`, la confianza de esas filas pasa a 100% (verificado por humano). Sin backend todavía: los cambios viven en el estado de React de `App` (`onUpdateAnalysis` actualiza `pliegos` y `selectedPliego`), sobreviven navegando dashboard↔análisis en la sesión, se pierden al recargar. No cubre añadir/quitar filas ni los campos de cabecera (`pliego.importe`, `pliego.lotes`, etc.) — posible fast-follow.
+- [x] KPIs del dashboard reactivas — dejaron de ser strings hardcodeadas; ahora `computeDashboardKpis` (`src/logic.js`) calcula recuento, importe agregado, importe medio y confianza media a partir de `pliegos` en tiempo real. Confianza media solo promedia pliegos con `analysisData` real; si no hay ninguno, cae al 94% demo. Cubierto con tests (`src/logic.test.js`, `src/Dashboard.test.jsx`).
+- [x] Aviso de descuadre lotes↔importe — `getLotesSumMismatch` (`src/logic.js`) compara `sum(lotes[].importe)` contra `pliego.importe` y pinta un banner de aviso (no bloqueante) en la sección Lotes, tanto en lectura como en vivo mientras se edita. Cubierto con tests (`src/logic.test.js`, `src/Analysis.test.jsx`). No cubre el caso de que `pliego.importe` en sí sea editable (esa cabecera sigue fuera de la feature de edición, ver punto anterior).
 
 **Medio plazo (versión funcional)**:
 - [x] Conectar a la **API de Anthropic Claude** para la extracción — implementado en rama `feat/connect-api` (`api/analyze.js`, modelo configurable por `ANTHROPIC_MODEL`, PDF base64 + `messages.create()` + Structured Outputs). **Probado con un pliego real y confirmado que funciona.** Pendiente de PR/merge a `main`.

@@ -10,3 +10,4 @@ dist-ssr
 .idea
 *.log
 .env.example
+coverage

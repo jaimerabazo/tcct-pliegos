@@ -62,6 +62,27 @@ describe('Analysis - aviso de descuadre lotes vs importe', () => {
     expect(container.textContent).not.toMatch(/no coincide con el importe total del pliego/);
   });
 
+  it('no muestra ningún aviso cuando el pliego no tiene análisis propio (cae al demo)', async () => {
+    const user = userEvent.setup();
+    // Sin analysisData ni id conocido: Analysis cae al fallback demo (MOCK_ANALYSIS['2026-7008']),
+    // cuyos lotes no pertenecen a este pliego, así que no debe avisar de descuadre.
+    const pliego = {
+      id: 'sin-analisis',
+      expediente: '2026/0001',
+      titulo: 'Pliego sin análisis',
+      organismo: 'Organismo de Prueba',
+      importe: 4500000,
+      lotes: 1,
+      procedimiento: 'Abierto',
+      ens: 'Alto',
+    };
+    const { container } = render(<Analysis pliego={pliego} onBack={vi.fn()} onUpdateAnalysis={vi.fn()} />);
+
+    await goToLotes(user);
+
+    expect(container.textContent).not.toMatch(/no coincide con el importe total del pliego/);
+  });
+
   it('indica "de más" cuando la suma de los lotes supera el importe del pliego', async () => {
     const user = userEvent.setup();
     const pliego = buildPliego(1000, [700, 700]); // suma lotes = 1400, importe pliego = 1000

@@ -829,7 +829,8 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
   const [editingSection, setEditingSection] = useState(null);
   const [draft, setDraft] = useState(null);
   const [draftInitial, setDraftInitial] = useState(null); // snapshot JSON del draft al empezar a editar
-  const data = pliego.analysisData || MOCK_ANALYSIS[pliego.id] || MOCK_ANALYSIS['2026-7008']; // fallback a demo
+  const ownAnalysis = pliego.analysisData || MOCK_ANALYSIS[pliego.id]; // análisis propio de este pliego (real o mock por id)
+  const data = ownAnalysis || MOCK_ANALYSIS['2026-7008']; // fallback a demo (no pertenece a este pliego)
 
   const buildDraft = (sectionId) => {
     if (sectionId === 'resumen') {
@@ -1109,6 +1110,9 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis }) => {
                   : <EditButton onClick={() => startEdit('lotes')} />}
               />
               {(() => {
+                // Solo tiene sentido comparar si el análisis pertenece a este pliego;
+                // con el fallback demo, los lotes no son los de este expediente.
+                if (!ownAnalysis) return null;
                 const mismatch = getLotesSumMismatch(pliego, { lotes: editingSection === 'lotes' ? draft : data.lotes });
                 if (!mismatch) return null;
                 return (

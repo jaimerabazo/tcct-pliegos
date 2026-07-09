@@ -1,21 +1,15 @@
 // Semilla de datos demo — mismos 6 expedientes que hoy viven como MOCK_PLIEGOS/MOCK_ANALYSIS
 // en src/App.jsx. Idempotente (upsert por `expediente`): se puede correr varias veces sin duplicar.
-import { config } from 'dotenv';
-config({ path: '.env.local' });
-import { PrismaClient } from '../src/generated/prisma/index.js';
-import { PrismaPg } from '@prisma/adapter-pg';
-
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
+import { pathToFileURL } from 'node:url';
 
 const MESES = { ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5, jul: 6, ago: 7, sep: 8, oct: 9, nov: 10, dic: 11 };
 
-function parseShortDate(str) {
+export function parseShortDate(str) {
   const [day, mes, year] = str.split(' ');
   return new Date(Number(year), MESES[mes], Number(day));
 }
 
-const MOCK_PLIEGOS = [
+export const MOCK_PLIEGOS = [
   {
     id: '2026-7008',
     expediente: '2026/7008',
@@ -96,7 +90,7 @@ const MOCK_PLIEGOS = [
   },
 ];
 
-const MOCK_ANALYSIS = {
+export const MOCK_ANALYSIS = {
   '2026-7008': {
     resumen: {
       objeto: 'Prestación de servicios de soporte técnico de sistemas para la Gerencia de Informática de la Seguridad Social, incluyendo servicios gestionados y equipos de trabajo STS distribuidos en tres áreas de actuación.',
@@ -158,34 +152,60 @@ const MOCK_ANALYSIS = {
   },
 };
 
-async function main() {
-  for (const p of MOCK_PLIEGOS) {
+// Convierte un pliego mock a la fila que espera Prisma (`create`).
+// Extraído para poder testear el mapeo de campos sin tocar la BD real.
+export function toPliegoRow(p) {
+  return {
+    expediente: p.expediente,
+    titulo: p.titulo,
+    organismo: p.organismo,
+    importe: p.importe,
+    lotes: p.lotes,
+    estado: p.estado,
+    procedimiento: p.procedimiento,
+    ens: p.ens,
+    fechaAnalisis: parseShortDate(p.fechaAnalisis),
+    fechaLimite: parseShortDate(p.fechaLimite),
+    analysisData: MOCK_ANALYSIS[p.id] ?? null,
+  };
+}
+
+// Inserta (o actualiza, idempotente por `expediente`) los pliegos demo usando el
+// cliente Prisma que se le pase. Recibir el cliente por parámetro permite inyectar
+// un doble en los tests en lugar de conectar contra Supabase.
+export async function seedPliegos(prisma, pliegos = MOCK_PLIEGOS) {
+  for (const p of pliegos) {
     await prisma.pliego.upsert({
       where: { expediente: p.expediente },
       update: {},
-      create: {
-        expediente: p.expediente,
-        titulo: p.titulo,
-        organismo: p.organismo,
-        importe: p.importe,
-        lotes: p.lotes,
-        estado: p.estado,
-        procedimiento: p.procedimiento,
-        ens: p.ens,
-        fechaAnalisis: parseShortDate(p.fechaAnalisis),
-        fechaLimite: parseShortDate(p.fechaLimite),
-        analysisData: MOCK_ANALYSIS[p.id] ?? null,
-      },
+      create: toPliegoRow(p),
     });
   }
-  console.log(`Seed completado: ${MOCK_PLIEGOS.length} pliegos.`);
+  return pliegos.length;
 }
 
-main()
-  .catch((e) => {
+// Solo abre conexión real y siembra cuando se ejecuta como script (`npm run db:seed`),
+// no cuando el módulo se importa desde los tests.
+async function main() {
+  const { config } = await import('dotenv');
+  config({ path: '.env.local' });
+  const { PrismaClient } = await import('../src/generated/prisma/index.js');
+  const { PrismaPg } = await import('@prisma/adapter-pg');
+
+  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  const prisma = new PrismaClient({ adapter });
+
+  try {
+    const count = await seedPliegos(prisma);
+    console.log(`Seed completado: ${count} pliegos.`);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
     console.error(e);
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });
+}

@@ -36,6 +36,9 @@
 | **Estilo Telefónica Tech corporativo** | Se pega a la identidad de la empresa para transmitir producto interno de verdad, no POC de fin de semana. |
 | **Vista de comparativa entre pliegos descartada por ahora** | Se prioriza conectar la extracción real (API) antes de seguir ampliando el mockup visual. Sigue en el backlog corto plazo, no eliminada. |
 | **API de extracción: Anthropic Claude** | Se migra desde OpenAI por fallo de cuota/billing en la API key de OpenAI. |
+| **Persistencia real: Supabase (Postgres) + Prisma** | Jaime decide "tomarse en serio" el proyecto — pasar de `useState`/mock a un backend sólido. Supabase en vez de Vercel Postgres porque da Auth/Storage de serie para más adelante. |
+| **TanStack Query para el estado de servidor en frontend** | Evita reinventar cache/loading/error a mano según crece la app; sustituye a los `useState`+handlers dispersos de hoy. |
+| **`analysisData` como columna JSON, sin normalizar en tablas** | Minimiza la reescritura del shape que ya consume `Analysis`; se normaliza más adelante solo si hace falta analítica cruzada entre pliegos. |
 
 ---
 
@@ -52,7 +55,13 @@
   - Se corrigió un bug preexistente en el ribbon de `Analysis`: "Duración" y "Cierre de ofertas" estaban hardcodeados a los valores de 2026/7008; ahora se derivan de `data.resumen`/`data.plazos` (solo se notaba con datos reales distintos).
   - Migrado de OpenAI a Anthropic Claude por fallo de cuota/billing en la API key de OpenAI (ver §3). Jaime ya probó `vercel dev` en local con un pliego real y `ANTHROPIC_API_KEY`, y la extracción funciona.
 
-**Pendiente inmediato**: abrir PR de `feat/connect-api` a `main` y mergear. Después, retomar el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma) o el medio plazo (Excel real, persistencia).
+**En marcha — iniciativa "full-stack sólido"** (rama `feat/prisma-supabase`), 4 fases (ver plan de la iniciativa):
+- [x] **Fase 1 — Prisma + Supabase**: modelo `Pliego` (`prisma/schema.prisma`), migración aplicada y seed de los 6 pliegos demo corrido contra la BD real de Supabase. Ver §5 y §9 para los detalles/gotchas de Prisma 7 que costó descubrir.
+- [ ] Fase 2 — API REST (`/api/pliegos`) con Zod + tests con Prisma mockeado.
+- [ ] Fase 3 — Reestructurar `App.jsx` en `src/api|components|views` + conectar con TanStack Query, eliminando `MOCK_PLIEGOS`/`MOCK_ANALYSIS` del frontend (pasan a vivir solo en `prisma/seed.js`).
+- [ ] Fase 4 — CI (GitHub Actions) + ampliar `coverage.include`.
+
+**Pendiente inmediato**: Fase 2 (API REST). Aparte, sigue abierto el PR de `feat/connect-api` a `main`, y el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma).
 
 **Aviso registrado**: URL de Vercel es pública por defecto. Ahora que la extracción es real (aunque sea con archivos de prueba), conviene activar Vercel Password Protection o SSO antes de compartir la URL ampliamente. Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar.
 
@@ -71,7 +80,14 @@ Vitest 4         test runner (+ @testing-library/react, jsdom)
 
 **Testing**: `npm run test` (una vez), `npm run test:watch`, `npm run test:coverage`. La lógica de negocio pura vive en `src/logic.js` (formateo, `computeDashboardKpis`, `getLotesSumMismatch`) con tests en `src/logic.test.js` — umbral de cobertura ≥90% (líneas/funciones/branches/statements) configurado en `vitest.config.js`, acotado por ahora a `src/logic.js` (`coverage.include`). Regla acordada con Jaime: **toda feature nueva debe llevar tests con ≥90% de cobertura** de su lógica; se amplía el `include` según se vayan cubriendo más partes. `src/Dashboard.test.jsx` y `src/Analysis.test.jsx` son tests de integración ligeros con React Testing Library (no cuentan para el umbral, son un plus).
 
-**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.parse()` con `output_config.format: json_schema` para la extracción. Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. Los pliegos aún no analizados con la API siguen viniendo de `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en `src/App.jsx`.
+**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.parse()` con `output_config.format: json_schema` para la extracción. Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. Los pliegos aún no analizados con la API siguen viniendo de `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en `src/App.jsx` (hasta la Fase 3 de la iniciativa full-stack).
+
+**Base de datos**: Supabase (Postgres) + Prisma 7 (`prisma/schema.prisma`, modelo único `Pliego` con `analysisData Json?`). Un par de cosas no obvias de Prisma 7 que costó descubrir, para no volver a perder tiempo:
+- **La conexión "Direct" de Supabase es IPv6-only** (sin registro DNS A, solo AAAA) salvo que pagues el add-on de IPv4 — inalcanzable desde Vercel y desde muchos entornos de desarrollo. Hay que usar el **connection pooler** (Supabase dashboard → Settings → Database → "Session pooler", host `*.pooler.supabase.com`, puerto 5432) como `DATABASE_URL`.
+- **Prisma 7 eliminó `url` del bloque `datasource` del schema** — ya no se puede hacer `url = env("DATABASE_URL")`. La URL para Migrate/Studio vive en `prisma.config.ts` (`datasource.url`), pero el `PrismaClient` en tiempo de ejecución necesita su propia conexión vía un **driver adapter** explícito: `new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })` (paquete `@prisma/adapter-pg` + `pg`). Ver `api/_lib/prisma.js` (singleton) y `prisma/seed.js`.
+- `prisma.config.ts` carga `.env.local` explícitamente (no `.env`, que es el default de Prisma) para ser coherente con dónde vive `ANTHROPIC_API_KEY`.
+- Generador elegido: **`prisma-client-js`** (el clásico, no el nuevo `prisma-client` que Prisma 7 pone por defecto y genera `.ts`) — este proyecto es JS puro, así evitamos meter un loader de TypeScript solo para el cliente de Prisma.
+- `prisma/seed.js` puebla los 6 pliegos demo (idempotente, `upsert` por `expediente`); correrlo con `npm run db:seed`.
 
 ---
 
@@ -133,9 +149,15 @@ marco          ENS Alto, CCN-STIC 803/804/810/811, RGPD, LOPDGDD, RD 311/2022
 ```
 tcct-pliegos/
 ├── api/
-│   └── analyze.js              Vercel Function: envía el PDF a Claude y extrae el JSON estructurado
+│   ├── analyze.js              Vercel Function: envía el PDF a Claude y extrae el JSON estructurado
+│   └── _lib/prisma.js          Cliente Prisma singleton (driver adapter @prisma/adapter-pg)
+├── prisma/
+│   ├── schema.prisma           Modelo Pliego (analysisData como Json)
+│   ├── seed.js                 Puebla los 6 pliegos demo (idempotente)
+│   └── migrations/
+├── prisma.config.ts            Config de la CLI de Prisma (lee .env.local)
 ├── index.html                  Carga Google Fonts en <head>
-├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, @anthropic-ai/sdk
+├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, @anthropic-ai/sdk, prisma
 ├── vite.config.js              plugin-react
 ├── tailwind.config.js          extend con paleta tt-*
 ├── postcss.config.js           tailwind + autoprefixer
@@ -144,7 +166,8 @@ tcct-pliegos/
 └── src/
     ├── main.jsx                entry ReactDOM
     ├── index.css               @tailwind directives + @keyframes pulse + @keyframes indeterminate
-    └── App.jsx                 TODO el componente de frontend en un solo archivo (~1050 líneas)
+    ├── generated/prisma/       Cliente Prisma generado (gitignored, se regenera con `prisma generate`/postinstall)
+    └── App.jsx                 TODO el componente de frontend en un solo archivo (~1050 líneas) — se reestructura en la Fase 3
 ```
 
 **`api/analyze.js`** (Node, runtime Vercel, `maxDuration: 60`):
@@ -160,7 +183,7 @@ tcct-pliegos/
 - Constante `UPLOAD_STEPS` con los mensajes que rota `UploadModal` mientras espera la respuesta real de `/api/analyze`.
 - Componente raíz `App`: `pliegos` en `useState` (arranca con `MOCK_PLIEGOS`, se le añaden los análisis reales), navegación `view`/`selectedPliego`, `showUploadModal`.
 
-**No usa**: routing library (solo state), base de datos, autenticación, localStorage/sessionStorage. Sí usa backend ahora (`api/analyze.js`, solo esa función).
+**No usa (todavía)**: routing library (solo state), autenticación, localStorage/sessionStorage. Ya usa backend (`api/analyze.js`) y base de datos real (Supabase vía Prisma, ver §5) desde la Fase 1 de la iniciativa full-stack — el frontend aún no la consume (eso es la Fase 3).
 
 ---
 
@@ -179,12 +202,20 @@ npx vercel env pull   # o crear .env.local con ANTHROPIC_API_KEY=sk-ant-...
 npm run dev:api       # = vercel dev, sirve frontend + /api juntos
 ```
 
+**Base de datos (Supabase + Prisma)**:
+```bash
+npm run db:migrate   # prisma migrate dev — aplica el schema contra DATABASE_URL
+npm run db:seed      # puebla los 6 pliegos demo (idempotente)
+npm run db:studio    # explorador visual de la BD (prisma studio)
+```
+`DATABASE_URL` va en `.env.local` — **usar el "Session pooler" de Supabase** (host `*.pooler.supabase.com`, puerto 5432), no la conexión "Direct" (es IPv6-only, inalcanzable desde aquí y desde Vercel). Ver §5 para más detalle de por qué.
+
 **Deploy Vercel**:
 1. Push a un repo de GitHub (`tcct-pliegos`, público o privado).
 2. vercel.com → Add New → Project → import repo → Deploy.
-3. Añadir `ANTHROPIC_API_KEY` en Settings → Environment Variables (Production + Preview) — sin ella `/api/analyze` falla. Opcional: `ANTHROPIC_MODEL`.
+3. Añadir en Settings → Environment Variables (Production + Preview): `ANTHROPIC_API_KEY` (opcional `ANTHROPIC_MODEL`) y `DATABASE_URL` (el mismo connection string del pooler de Supabase) — sin ellas `/api/analyze` y cualquier endpoint que use Prisma fallan.
 4. URL pública en 90s tipo `tcct-pliegos-xxx.vercel.app`.
-5. Cada `git push` a `main` = redeploy automático.
+5. Cada `git push` a `main` = redeploy automático. `postinstall: prisma generate` corre solo en cada build.
 
 ---
 

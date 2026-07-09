@@ -1,0 +1,36 @@
+// Prisma schema — TCCT Pliegos
+// Un único modelo Pliego; analysisData guarda el shape anidado (resumen, lotes[], perfiles[],
+// solvencia, criterios[], penalizaciones[], plazos, marco) que ya consume src/views/Analysis.jsx.
+// Sin normalizar en tablas separadas por ahora (ver plan de la iniciativa "full-stack sólido").
+
+// Generador clásico (JS, no el nuevo "prisma-client" basado en TS) — el proyecto es
+// JS puro (Vite + Vercel Functions sin build de TypeScript), así que evitamos depender
+// de un loader de TS solo para el cliente de Prisma.
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+// Prisma 7 ya no acepta `url` aquí: la URL de Migrate vive en prisma.config.ts, y el
+// PrismaClient en tiempo de ejecución recibe la conexión vía un `adapter` explícito
+// (@prisma/adapter-pg) en api/_lib/prisma.js y prisma/seed.js.
+datasource db {
+  provider = "postgresql"
+}
+
+model Pliego {
+  id            String    @id @default(cuid())
+  expediente    String    @unique
+  titulo        String
+  organismo     String
+  importe       Float
+  lotes         Int
+  estado        String
+  procedimiento String
+  ens           String
+  fechaAnalisis DateTime  @default(now())
+  fechaLimite   DateTime?
+  analysisData  Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}

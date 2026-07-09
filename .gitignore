@@ -11,3 +11,5 @@ dist-ssr
 *.log
 .env.example
 coverage
+
+/src/generated/prisma

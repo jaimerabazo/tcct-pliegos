@@ -1,0 +1,15 @@
+// El proyecto guarda los secretos locales en .env.local (mismo sitio que ANTHROPIC_API_KEY),
+// no en .env — apuntamos dotenv ahí explícitamente en vez del default.
+import { config } from "dotenv";
+config({ path: ".env.local" });
+import { defineConfig } from "prisma/config";
+
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: {
+    path: "prisma/migrations",
+  },
+  datasource: {
+    url: process.env["DATABASE_URL"],
+  },
+});

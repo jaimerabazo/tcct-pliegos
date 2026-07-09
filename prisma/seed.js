@@ -178,10 +178,11 @@ export function toPliegoRow(p) {
 // un doble en los tests en lugar de conectar contra Supabase.
 export async function seedPliegos(prisma, pliegos = MOCK_PLIEGOS) {
   for (const p of pliegos) {
+    const row = toPliegoRow(p);
     await prisma.pliego.upsert({
       where: { expediente: p.expediente },
-      update: {},
-      create: toPliegoRow(p),
+      update: row,
+      create: row,
     });
   }
   return pliegos.length;

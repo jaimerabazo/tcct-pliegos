@@ -109,4 +109,20 @@ describe('seedPliegos', () => {
     await seedPliegos(prisma);
     expect(await prisma.pliego.count()).toBe(MOCK_PLIEGOS.length);
   });
+
+  it('refresca las filas existentes al re-sembrar con datos distintos', async () => {
+    const prisma = createFakePrisma();
+    const [uno] = MOCK_PLIEGOS;
+
+    await seedPliegos(prisma, [uno]);
+
+    // Simula un cambio en los mocks de demo (título, importe, etc.).
+    const editado = { ...uno, titulo: 'Título actualizado', importe: 99999999 };
+    await seedPliegos(prisma, [editado]);
+
+    const stored = await prisma.pliego.findUnique({ where: { expediente: uno.expediente } });
+    expect(await prisma.pliego.count()).toBe(1);
+    expect(stored.titulo).toBe('Título actualizado');
+    expect(stored.importe).toBe(99999999);
+  });
 });

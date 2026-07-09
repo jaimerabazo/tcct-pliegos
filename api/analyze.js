@@ -1,4 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { prisma } from './_lib/prisma.js';
+import { pliegoFromAnalysisSchema, analysisDataSchema } from './_lib/schemas.js';
+import { parseShortDate } from '../prisma/seed.js';
 
 export const config = {
   maxDuration: 300,
@@ -223,6 +226,36 @@ function getClientErrorMessage(err) {
   return 'No se ha podido analizar el documento. Inténtalo de nuevo.';
 }
 
+// Convierte el resultado ya validado de Claude en la fila que espera Prisma.
+// Testable sin BD real: es una función pura (ver api/analyze.test.js).
+export function toPliegoRowFromAnalysis({ pliego, analysis }) {
+  const now = new Date();
+  return {
+    expediente: pliego.expediente,
+    titulo: pliego.titulo,
+    organismo: pliego.organismo,
+    importe: pliego.importe,
+    lotes: pliego.lotes,
+    estado: 'analizado',
+    procedimiento: pliego.procedimiento,
+    ens: pliego.ens,
+    fechaAnalisis: now,
+    fechaLimite: parseShortDate(pliego.fechaLimite),
+    analysisData: analysis,
+  };
+}
+
+// Persiste (o refresca, si ya existía el mismo expediente) el resultado de un análisis.
+// Recibe el cliente Prisma por parámetro — mismo patrón de inyección que prisma/seed.js.
+export async function persistAnalysis(client, result) {
+  const row = toPliegoRowFromAnalysis(result);
+  return client.pliego.upsert({
+    where: { expediente: row.expediente },
+    update: row,
+    create: row,
+  });
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Método no permitido.' });
@@ -274,7 +307,17 @@ export default async function handler(req, res) {
     });
 
     const result = getAnthropicResult(response);
-    res.status(200).json(result);
+
+    const pliegoCheck = pliegoFromAnalysisSchema.safeParse(result.pliego);
+    const analysisCheck = analysisDataSchema.safeParse(result.analysis);
+    if (!pliegoCheck.success || !analysisCheck.success) {
+      console.error('Respuesta de Claude no válida:', pliegoCheck.error ?? analysisCheck.error);
+      res.status(502).json({ error: 'Claude ha devuelto un JSON válido, pero no coincide con los campos esperados.' });
+      return;
+    }
+
+    const saved = await persistAnalysis(prisma, { pliego: pliegoCheck.data, analysis: analysisCheck.data });
+    res.status(200).json(saved);
   } catch (err) {
     console.error('Error analizando el pliego:', err);
     res.status(502).json({ error: getClientErrorMessage(err) });

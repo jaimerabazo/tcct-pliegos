@@ -6,7 +6,10 @@ const MESES = { ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5, jul: 6, ago: 7, 
 
 export function parseShortDate(str) {
   const [day, mes, year] = str.split(' ');
-  return new Date(Number(year), MESES[mes], Number(day));
+  // Anclar a medianoche UTC (no local): al persistir el Date se normaliza a UTC,
+  // y una medianoche local en un huso adelantado (p.ej. Madrid UTC+2) se guardaría
+  // como las 22:00Z del día anterior, mostrándose como el día natural previo.
+  return new Date(Date.UTC(Number(year), MESES[mes], Number(day)));
 }
 
 export const MOCK_PLIEGOS = [

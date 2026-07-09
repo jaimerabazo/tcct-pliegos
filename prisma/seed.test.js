@@ -34,11 +34,13 @@ function createFakePrisma() {
 }
 
 describe('parseShortDate', () => {
-  it('convierte "DD mes AAAA" en un Date correcto', () => {
+  it('convierte "DD mes AAAA" en un Date en medianoche UTC', () => {
     const d = parseShortDate('15 jul 2026');
-    expect(d.getFullYear()).toBe(2026);
-    expect(d.getMonth()).toBe(6); // julio = 6 (0-indexed)
-    expect(d.getDate()).toBe(15);
+    expect(d.getUTCFullYear()).toBe(2026);
+    expect(d.getUTCMonth()).toBe(6); // julio = 6 (0-indexed)
+    expect(d.getUTCDate()).toBe(15);
+    // Independiente del huso horario: siempre medianoche UTC, no el día anterior.
+    expect(d.toISOString()).toBe('2026-07-15T00:00:00.000Z');
   });
 });
 

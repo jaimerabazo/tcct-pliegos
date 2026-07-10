@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Analysis } from './App.jsx';
+import { Analysis } from './Analysis.jsx';
 
 const buildAnalysisData = (loteImportes) => ({
   resumen: { objeto: 'Objeto de prueba', cpv: [], procedimiento: 'Abierto', duracion: '12 meses', prorrogas: 'Sin prórrogas' },
@@ -62,10 +62,9 @@ describe('Analysis - aviso de descuadre lotes vs importe', () => {
     expect(container.textContent).not.toMatch(/no coincide con el importe total del pliego/);
   });
 
-  it('no muestra ningún aviso cuando el pliego no tiene análisis propio (cae al demo)', async () => {
-    const user = userEvent.setup();
-    // Sin analysisData ni id conocido: Analysis cae al fallback demo (MOCK_ANALYSIS['2026-7008']),
-    // cuyos lotes no pertenecen a este pliego, así que no debe avisar de descuadre.
+  it('muestra un estado vacío (sin secciones ni aviso) cuando el pliego no tiene análisis propio', () => {
+    // Sin analysisData: ya no se cae a datos demo de otro expediente; se muestra un
+    // estado vacío claro. No hay índice de secciones ni aviso de descuadre.
     const pliego = {
       id: 'sin-analisis',
       expediente: '2026/0001',
@@ -75,12 +74,15 @@ describe('Analysis - aviso de descuadre lotes vs importe', () => {
       lotes: 1,
       procedimiento: 'Abierto',
       ens: 'Alto',
+      analysisData: null,
     };
     const { container } = render(<Analysis pliego={pliego} onBack={vi.fn()} onUpdateAnalysis={vi.fn()} />);
 
-    await goToLotes(user);
-
+    expect(container.textContent).toMatch(/aún no se ha analizado en detalle/);
     expect(container.textContent).not.toMatch(/no coincide con el importe total del pliego/);
+    // El pliego (título/importe) sí se muestra en la cabecera; las secciones no.
+    expect(screen.getByText('Pliego sin análisis')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editar' })).toBeNull();
   });
 
   it('indica "de más" cuando la suma de los lotes supera el importe del pliego', async () => {

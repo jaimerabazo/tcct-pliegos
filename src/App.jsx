@@ -16,7 +16,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
 
-  const { data: pliegos = [], isLoading, isError, error } = useQuery({
+  const { data: pliegos = [], isLoading, isFetching, isError, error } = useQuery({
     queryKey: ['pliegos'],
     queryFn: listPliegos,
   });
@@ -46,8 +46,11 @@ export default function App() {
     setView('analysis');
   };
 
-  const handleUpdateAnalysis = (id, analysisData) => updateAnalysisMutation.mutate({ id, analysisData });
-  const handleUpdatePliego = (id, patch) => updatePliegoMutation.mutate({ id, patch });
+  // mutateAsync (no mutate) para que la vista pueda await-ear el guardado y solo salir
+  // del modo edición si la persistencia tuvo éxito; si falla, la promesa rechaza y la
+  // vista mantiene el borrador y muestra el error (evita pérdida silenciosa de datos).
+  const handleUpdateAnalysis = (id, analysisData) => updateAnalysisMutation.mutateAsync({ id, analysisData });
+  const handleUpdatePliego = (id, patch) => updatePliegoMutation.mutateAsync({ id, patch });
 
   return (
     <>
@@ -71,8 +74,12 @@ export default function App() {
                 onUpdateAnalysis={handleUpdateAnalysis}
                 onUpdatePliego={handleUpdatePliego}
               />
-            ) : (
+            ) : isError ? (
+              <ErrorState message={error?.message} onRetry={invalidatePliegos} />
+            ) : isLoading || isFetching ? (
               <LoadingState />
+            ) : (
+              <NotFoundState onBack={() => setView('dashboard')} />
             )
           )}
         </main>
@@ -90,6 +97,25 @@ const LoadingState = () => (
   <div className="p-8 flex items-center gap-3 text-[14px]" style={{ color: '#5B6478' }}>
     <Loader2 size={18} strokeWidth={2} color="#0066FF" className="animate-spin" />
     Cargando pliegos…
+  </div>
+);
+
+const NotFoundState = ({ onBack }) => (
+  <div className="p-8 max-w-[560px]">
+    <div className="flex items-start gap-3 p-4 rounded-md border" style={{ borderColor: '#E5E9F0', background: '#F5F7FA' }}>
+      <AlertTriangle size={18} color="#5B6478" strokeWidth={1.8} className="shrink-0 mt-0.5" />
+      <div>
+        <div className="text-[13px] mb-0.5" style={{ color: '#001B4B', fontWeight: 500 }}>Pliego no encontrado</div>
+        <div className="text-[12px] mb-3" style={{ color: '#5B6478' }}>El pliego seleccionado ya no está disponible.</div>
+        <button
+          onClick={onBack}
+          className="px-3 py-1.5 rounded-md text-[12px]"
+          style={{ background: '#0066FF', color: 'white', fontWeight: 500 }}
+        >
+          Volver al dashboard
+        </button>
+      </div>
+    </div>
   </div>
 );
 

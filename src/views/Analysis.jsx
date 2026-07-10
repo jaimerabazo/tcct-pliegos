@@ -4,7 +4,7 @@ import {
   Calendar, FileText, Building2, FileSearch,
 } from 'lucide-react';
 import {
-  isBlankNumber, formatNumber, formatEuroFull,
+  isBlankNumber, formatNumber, formatEuroFull, blankNumberToNull, normalizeAnalysisNumbers,
   listToText, textToList, linesToText, textToLines, getLotesSumMismatch,
 } from '../logic.js';
 import {
@@ -125,6 +125,8 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
   const [draft, setDraft] = useState(null);
   const [pliegoImporteDraft, setPliegoImporteDraft] = useState(null); // solo relevante editando 'lotes'
   const [draftInitial, setDraftInitial] = useState(null); // snapshot JSON del draft (+ importe total) al empezar a editar
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const data = pliego.analysisData;
 
   const buildDraft = (sectionId) => {
@@ -153,11 +155,16 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
     setEditingSection(sectionId);
   };
 
-  const cancelEdit = () => {
+  const resetEditState = () => {
     setEditingSection(null);
     setDraft(null);
     setPliegoImporteDraft(null);
     setDraftInitial(null);
+  };
+
+  const cancelEdit = () => {
+    setSaveError(null);
+    resetEditState();
   };
 
   const goToSection = (sectionId) => {
@@ -193,7 +200,8 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
     return empty;
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
+    if (saving) return;
     const emptyNumbers = collectEmptyNumbers();
     if (emptyNumbers.length > 0) {
       const ok = window.confirm(
@@ -210,14 +218,34 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
     } else {
       updated = { ...data, [editingSection]: draft };
     }
-    onUpdateAnalysis(pliego.id, updated);
-    if (editingSection === 'lotes') {
-      onUpdatePliego(pliego.id, { importe: pliegoImporteDraft });
+    // NumberField deja los campos numéricos vacíos como ''; la API espera número o
+    // null. Normalizamos antes de persistir para que "sin valor" se guarde de verdad.
+    updated = normalizeAnalysisNumbers(updated);
+    // Esperamos a que la persistencia termine antes de salir del modo edición. Si falla,
+    // mantenemos el borrador y mostramos el error, en vez de resetear a datos obsoletos
+    // (que daría al usuario una falsa sensación de guardado y pérdida silenciosa).
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (editingSection === 'lotes') {
+        // Editar "Lotes" toca dos columnas de la misma fila: el `importe` de cabecera
+        // y `analysisData` (con los lotes). Las persistimos en un ÚNICO PATCH para que
+        // sea atómico —o se guardan ambas o ninguna— y con una sola invalidación de la
+        // lista, evitando que la BD/UI queden con importe y lotes descuadrados si una
+        // de dos peticiones separadas fallara.
+        await onUpdatePliego(pliego.id, {
+          importe: blankNumberToNull(pliegoImporteDraft),
+          analysisData: updated,
+        });
+      } else {
+        await onUpdateAnalysis(pliego.id, updated);
+      }
+      resetEditState();
+    } catch (err) {
+      setSaveError(err?.message || 'No se han podido guardar los cambios. Revisa la conexión e inténtalo de nuevo.');
+    } finally {
+      setSaving(false);
     }
-    setEditingSection(null);
-    setDraft(null);
-    setPliegoImporteDraft(null);
-    setDraftInitial(null);
   };
 
   const updateDraftRow = (idx, field, value) => {
@@ -271,13 +299,21 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
 
         {/* Contenido */}
         <div className="min-w-0">
+          {saveError && editingSection && (
+            <div className="flex items-start gap-3 p-3 mb-4 rounded-md border" style={{ borderColor: '#F5C6C6', background: '#FCEBEB' }}>
+              <AlertTriangle size={16} color="#8B1F1F" strokeWidth={1.8} className="shrink-0 mt-0.5" />
+              <div className="text-[12.5px]" style={{ color: '#8B1F1F' }}>
+                No se han guardado los cambios: {saveError} Tus cambios siguen en el formulario; vuelve a intentarlo.
+              </div>
+            </div>
+          )}
           {section === 'resumen' && (
             <SectionCard>
               <SectionTitle
                 icon={FileText}
                 title="Resumen ejecutivo"
                 actions={editingSection === 'resumen'
-                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} saving={saving} />
                   : <EditButton onClick={() => startEdit('resumen')} />}
               />
               {editingSection === 'resumen' ? (
@@ -360,7 +396,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
                 title="Lotes"
                 subtitle={`${data.lotes.length} lotes por un importe agregado de ${formatEuroFull(data.lotes.reduce((a, l) => a + (Number(l.importe) || 0), 0))}`}
                 actions={editingSection === 'lotes'
-                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} saving={saving} />
                   : <EditButton onClick={() => startEdit('lotes')} />}
               />
               {(() => {
@@ -426,7 +462,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
                 title="Perfiles requeridos (STS)"
                 subtitle={`${data.perfiles.reduce((a, p) => a + (Number(p.headcount) || 0), 0)} recursos totales distribuidos en ${data.perfiles.length} categorías`}
                 actions={editingSection === 'perfiles'
-                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} saving={saving} />
                   : <EditButton onClick={() => startEdit('perfiles')} />}
               />
               <table className="w-full">
@@ -482,7 +518,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
                 icon={Shield}
                 title="Requisitos de solvencia"
                 actions={editingSection === 'solvencia'
-                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} saving={saving} />
                   : <EditButton onClick={() => startEdit('solvencia')} />}
               />
               {editingSection === 'solvencia' ? (
@@ -570,7 +606,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
                 title="Criterios de adjudicación"
                 subtitle="Pesos porcentuales por criterio, distinguiendo evaluación automática (fórmula) y de juicio de valor"
                 actions={editingSection === 'criterios'
-                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} saving={saving} />
                   : <EditButton onClick={() => startEdit('criterios')} />}
               />
               <div className="space-y-2">
@@ -618,7 +654,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
                 title="Penalizaciones"
                 subtitle="Cláusulas de penalización identificadas en el PCAP"
                 actions={editingSection === 'penalizaciones'
-                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} saving={saving} />
                   : <EditButton onClick={() => startEdit('penalizaciones')} />}
               />
               <div className="space-y-3">
@@ -653,7 +689,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
                 icon={Calendar}
                 title="Plazos e hitos"
                 actions={editingSection === 'plazos'
-                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} />
+                  ? <SaveCancelButtons onSave={saveEdit} onCancel={cancelEdit} saving={saving} />
                   : <EditButton onClick={() => startEdit('plazos')} />}
               />
               {editingSection === 'plazos' ? (

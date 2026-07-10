@@ -23,7 +23,7 @@ model Pliego {
   expediente    String    @unique
   titulo        String
   organismo     String
-  importe       Float
+  importe       Float?
   lotes         Int
   estado        String
   procedimiento String

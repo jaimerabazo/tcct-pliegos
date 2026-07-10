@@ -7,24 +7,8 @@ import { z } from 'zod';
 
 export const ESTADOS = ['analizado', 'procesando', 'revision', 'error'];
 
-// Campos de cabecera del pliego que se pueden actualizar por separado de analysisData
-// (sustituye a onUpdatePliego). `id`, `expediente`, `analysisData`, `createdAt`,
-// `updatedAt` no se tocan aquí: expediente es la clave natural, analysisData tiene
-// su propio endpoint, el resto lo gestiona Prisma.
-export const pliegoPatchSchema = z.object({
-  titulo: z.string().min(1).optional(),
-  organismo: z.string().min(1).optional(),
-  importe: z.number().optional(),
-  lotes: z.number().int().optional(),
-  estado: z.enum(ESTADOS).optional(),
-  procedimiento: z.string().min(1).optional(),
-  ens: z.string().min(1).optional(),
-  fechaLimite: z.coerce.date().optional(),
-}).strict().refine((patch) => Object.keys(patch).length > 0, {
-  // Prisma rechaza un update con `data` vacío (500); exigir al menos un campo lo
-  // convierte en un 400 claro en vez de un fallo genérico del servidor.
-  message: 'Debe indicarse al menos un campo a actualizar.',
-});
+// (pliegoPatchSchema se define más abajo, tras analysisDataSchema, porque puede
+// incluir analysisData en un mismo patch — ver la nota junto a su definición.)
 
 // Shape del bloque `pliego` tal como lo devuelve Claude (api/analyze.js), antes de
 // persistirlo — `fechaLimite` todavía es el string corto ("15 jul 2026"), no un Date.
@@ -39,10 +23,12 @@ export const pliegoFromAnalysisSchema = z.object({
   ens: z.string().min(1),
 }).strict();
 
+// Los campos numéricos editables desde la UI (NumberField) admiten null: un hueco
+// se guarda como "sin valor", no como '' (ver src/logic.js:normalizeAnalysisNumbers).
 const loteSchema = z.object({
   numero: z.number().int(),
   descripcion: z.string(),
-  importe: z.number(),
+  importe: z.number().nullable(),
   cpv: z.string(),
   confianza: z.number(),
 }).strict();
@@ -50,8 +36,8 @@ const loteSchema = z.object({
 const perfilSchema = z.object({
   codigo: z.string(),
   categoria: z.string(),
-  headcount: z.number(),
-  experiencia: z.number(),
+  headcount: z.number().nullable(),
+  experiencia: z.number().nullable(),
   certs: z.array(z.string()),
   lote: z.string(),
   confianza: z.number(),
@@ -60,7 +46,7 @@ const perfilSchema = z.object({
 const criterioSchema = z.object({
   tipo: z.enum(['automatico', 'juicio']),
   criterio: z.string(),
-  peso: z.number(),
+  peso: z.number().nullable(),
 }).strict();
 
 const penalizacionSchema = z.object({
@@ -84,13 +70,13 @@ export const analysisDataSchema = z.object({
   solvencia: z.object({
     tecnica: z.object({
       experienciaMinima: z.string(),
-      volumenNegocio: z.number(),
+      volumenNegocio: z.number().nullable(),
       clasificacion: z.string(),
       certificaciones: z.array(z.string()),
     }).strict(),
     economica: z.object({
-      seguroRC: z.number(),
-      capitalMinimo: z.number(),
+      seguroRC: z.number().nullable(),
+      capitalMinimo: z.number().nullable(),
     }).strict(),
   }).strict(),
   criterios: z.array(criterioSchema),
@@ -108,3 +94,28 @@ export const analysisDataSchema = z.object({
     normativa: z.array(z.string()),
   }).strict(),
 }).strict();
+
+// Campos actualizables de un pliego. `id`, `expediente`, `createdAt` y `updatedAt`
+// no se tocan aquí (expediente es la clave natural, el resto lo gestiona Prisma).
+// `analysisData` sí se admite —además de tener su propio endpoint— para poder
+// actualizar en un ÚNICO PATCH (una sola escritura de fila, por tanto atómica) tanto
+// la cabecera como el análisis: al editar "Lotes" cambian a la vez el `importe` de
+// cabecera y `analysisData.lotes`, y deben persistirse juntos o no persistirse (si
+// fueran dos PATCH separados, uno podría fallar y dejar importe y lotes descuadrados).
+export const pliegoPatchSchema = z.object({
+  titulo: z.string().min(1).optional(),
+  organismo: z.string().min(1).optional(),
+  // Nullable: un campo numérico vacío en la UI se persiste como null ("sin valor"),
+  // no como '' (que la validación rechazaría). Ver src/logic.js:blankNumberToNull.
+  importe: z.number().nullable().optional(),
+  lotes: z.number().int().optional(),
+  estado: z.enum(ESTADOS).optional(),
+  procedimiento: z.string().min(1).optional(),
+  ens: z.string().min(1).optional(),
+  fechaLimite: z.coerce.date().optional(),
+  analysisData: analysisDataSchema.optional(),
+}).strict().refine((patch) => Object.keys(patch).length > 0, {
+  // Prisma rechaza un update con `data` vacío (500); exigir al menos un campo lo
+  // convierte en un 400 claro en vez de un fallo genérico del servidor.
+  message: 'Debe indicarse al menos un campo a actualizar.',
+});

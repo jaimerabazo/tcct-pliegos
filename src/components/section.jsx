@@ -46,25 +46,27 @@ export const EditButton = ({ onClick }) => (
   </button>
 );
 
-export const SaveCancelButtons = ({ onSave, onCancel }) => (
+export const SaveCancelButtons = ({ onSave, onCancel, saving = false }) => (
   <div className="flex items-center gap-2 shrink-0">
     <button
       onClick={onCancel}
-      className="px-2.5 py-1.5 rounded-md text-[12px] transition"
+      disabled={saving}
+      className="px-2.5 py-1.5 rounded-md text-[12px] transition disabled:opacity-60"
       style={{ color: '#5B6478' }}
-      onMouseEnter={e => e.currentTarget.style.background = '#F5F7FA'}
+      onMouseEnter={e => { if (!saving) e.currentTarget.style.background = '#F5F7FA'; }}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >
       Cancelar
     </button>
     <button
       onClick={onSave}
-      className="px-2.5 py-1.5 rounded-md text-[12px] transition"
+      disabled={saving}
+      className="px-2.5 py-1.5 rounded-md text-[12px] transition disabled:opacity-60 disabled:cursor-not-allowed"
       style={{ background: '#0066FF', color: 'white', fontWeight: 500 }}
-      onMouseEnter={e => e.currentTarget.style.background = '#0044CC'}
+      onMouseEnter={e => { if (!saving) e.currentTarget.style.background = '#0044CC'; }}
       onMouseLeave={e => e.currentTarget.style.background = '#0066FF'}
     >
-      Guardar
+      {saving ? 'Guardando…' : 'Guardar'}
     </button>
   </div>
 );

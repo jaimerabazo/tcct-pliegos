@@ -2,6 +2,33 @@
 
 export const isBlankNumber = (v) => v === '' || v === null || v === undefined || Number.isNaN(v);
 
+// Los campos numéricos vacíos viajan como '' desde NumberField (ver fields.jsx).
+// El contrato de la API espera número o null (nunca ''), así que normalizamos el
+// hueco a null antes de persistir — así "sin valor" se guarda de verdad en vez de
+// ser rechazado por la validación Zod (pérdida silenciosa del cambio).
+export const blankNumberToNull = (v) => (isBlankNumber(v) ? null : v);
+
+// Normaliza a null los campos numéricos editables de un analysisData (los que se
+// editan con NumberField y por tanto pueden quedar en ''). No toca el resto del
+// shape. Devuelve una copia; no muta la entrada.
+export function normalizeAnalysisNumbers(data) {
+  const d = structuredClone(data);
+  (d.lotes || []).forEach((l) => { l.importe = blankNumberToNull(l.importe); });
+  (d.perfiles || []).forEach((p) => {
+    p.headcount = blankNumberToNull(p.headcount);
+    p.experiencia = blankNumberToNull(p.experiencia);
+  });
+  if (d.solvencia?.tecnica) {
+    d.solvencia.tecnica.volumenNegocio = blankNumberToNull(d.solvencia.tecnica.volumenNegocio);
+  }
+  if (d.solvencia?.economica) {
+    d.solvencia.economica.seguroRC = blankNumberToNull(d.solvencia.economica.seguroRC);
+    d.solvencia.economica.capitalMinimo = blankNumberToNull(d.solvencia.economica.capitalMinimo);
+  }
+  (d.criterios || []).forEach((c) => { c.peso = blankNumberToNull(c.peso); });
+  return d;
+}
+
 export const formatNumber = (n) => (isBlankNumber(n) ? '—' : n);
 
 export const formatEuro = (n) => {

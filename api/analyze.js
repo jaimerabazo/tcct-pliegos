@@ -267,6 +267,14 @@ export default async function handler(req, res) {
     return;
   }
 
+  // Comprobamos la config de BD antes de extraer el PDF: la persistencia con Prisma
+  // ocurre después de llamar a Claude, así que sin este guard un DATABASE_URL ausente
+  // gastaría una extracción completa para acabar fallando con un 502 genérico.
+  if (!process.env.DATABASE_URL) {
+    res.status(500).json({ error: 'Falta configurar DATABASE_URL en el entorno del servidor.' });
+    return;
+  }
+
   const pdfBuffer = await readRequestBody(req);
   if (!pdfBuffer.length) {
     res.status(400).json({ error: 'No se ha recibido ningún archivo.' });

@@ -10,8 +10,8 @@ describe('pliegoPatchSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('acepta un objeto vacío (ningún campo obligatorio)', () => {
-    expect(pliegoPatchSchema.safeParse({}).success).toBe(true);
+  it('rechaza un objeto vacío (Prisma rechaza un update sin data)', () => {
+    expect(pliegoPatchSchema.safeParse({}).success).toBe(false);
   });
 
   it('rechaza campos desconocidos (id, expediente, analysisData no se tocan aquí)', () => {

@@ -20,7 +20,11 @@ export const pliegoPatchSchema = z.object({
   procedimiento: z.string().min(1).optional(),
   ens: z.string().min(1).optional(),
   fechaLimite: z.coerce.date().optional(),
-}).strict();
+}).strict().refine((patch) => Object.keys(patch).length > 0, {
+  // Prisma rechaza un update con `data` vacío (500); exigir al menos un campo lo
+  // convierte en un 400 claro en vez de un fallo genérico del servidor.
+  message: 'Debe indicarse al menos un campo a actualizar.',
+});
 
 // Shape del bloque `pliego` tal como lo devuelve Claude (api/analyze.js), antes de
 // persistirlo — `fechaLimite` todavía es el string corto ("15 jul 2026"), no un Date.

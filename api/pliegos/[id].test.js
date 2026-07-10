@@ -81,6 +81,14 @@ describe('handler /api/pliegos/[id]', () => {
     expect(res.body.details).toBeTruthy();
   });
 
+  it('PATCH responde 400 si el body está vacío (nada que actualizar)', async () => {
+    const prisma = createFakePliegoPrisma([baseRow]);
+    const res = createFakeRes();
+    await handler({ method: 'PATCH', query: { id: 'a' }, body: {} }, res, prisma);
+    expect(res.statusCode).toBe(400);
+    expect(res.body.details).toBeTruthy();
+  });
+
   it('PATCH responde 400 si un campo tiene el tipo equivocado', async () => {
     const prisma = createFakePliegoPrisma([baseRow]);
     const res = createFakeRes();

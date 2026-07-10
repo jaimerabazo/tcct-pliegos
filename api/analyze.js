@@ -317,7 +317,13 @@ export default async function handler(req, res) {
     }
 
     const saved = await persistAnalysis(prisma, { pliego: pliegoCheck.data, analysis: analysisCheck.data });
-    res.status(200).json(saved);
+    // El frontend (UploadModal → handleUploadComplete) espera { pliego, analysis }, no la fila
+    // plana de Prisma. Devolvemos los datos ya validados (pliego con fechaLimite en formato corto,
+    // como consume la UI) y adjuntamos el id real de la BD.
+    res.status(200).json({
+      pliego: { ...pliegoCheck.data, id: saved.id },
+      analysis: analysisCheck.data,
+    });
   } catch (err) {
     console.error('Error analizando el pliego:', err);
     res.status(502).json({ error: getClientErrorMessage(err) });

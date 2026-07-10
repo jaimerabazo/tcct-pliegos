@@ -12,6 +12,8 @@ import {
   textToLines,
   computeDashboardKpis,
   getLotesSumMismatch,
+  blankNumberToNull,
+  normalizeAnalysisNumbers,
 } from './logic.js';
 
 describe('isBlankNumber', () => {
@@ -184,6 +186,73 @@ describe('computeDashboardKpis', () => {
     ];
     const kpis = computeDashboardKpis(pliegos);
     expect(kpis.avgConfianza).toBe(94);
+  });
+});
+
+describe('blankNumberToNull', () => {
+  it('convierte los huecos ("", null, undefined, NaN) en null', () => {
+    expect(blankNumberToNull('')).toBeNull();
+    expect(blankNumberToNull(null)).toBeNull();
+    expect(blankNumberToNull(undefined)).toBeNull();
+    expect(blankNumberToNull(NaN)).toBeNull();
+  });
+
+  it('deja pasar los números válidos, incluido el 0', () => {
+    expect(blankNumberToNull(0)).toBe(0);
+    expect(blankNumberToNull(42)).toBe(42);
+    expect(blankNumberToNull(-5)).toBe(-5);
+  });
+});
+
+describe('normalizeAnalysisNumbers', () => {
+  const build = () => ({
+    resumen: { objeto: 'x', cpv: [], procedimiento: 'Abierto', duracion: '', prorrogas: '' },
+    lotes: [{ numero: 1, descripcion: 'L1', importe: '', cpv: '00', confianza: 100 }],
+    perfiles: [{ codigo: 'A', categoria: 'C', headcount: '', experiencia: '', certs: [], lote: '1', confianza: 100 }],
+    solvencia: {
+      tecnica: { experienciaMinima: '', volumenNegocio: '', clasificacion: '', certificaciones: [] },
+      economica: { seguroRC: '', capitalMinimo: '' },
+    },
+    criterios: [{ tipo: 'automatico', criterio: 'Precio', peso: '' }],
+    penalizaciones: [],
+    plazos: { limite: '', apertura: '', formalizacion: '', inicio: '', hitos: [] },
+    marco: { ens: 'Alto', ccnStic: [], normativa: [] },
+  });
+
+  it('convierte todos los campos numéricos vacíos en null', () => {
+    const out = normalizeAnalysisNumbers(build());
+    expect(out.lotes[0].importe).toBeNull();
+    expect(out.perfiles[0].headcount).toBeNull();
+    expect(out.perfiles[0].experiencia).toBeNull();
+    expect(out.solvencia.tecnica.volumenNegocio).toBeNull();
+    expect(out.solvencia.economica.seguroRC).toBeNull();
+    expect(out.solvencia.economica.capitalMinimo).toBeNull();
+    expect(out.criterios[0].peso).toBeNull();
+  });
+
+  it('no toca los números válidos ni los campos de texto', () => {
+    const data = build();
+    data.lotes[0].importe = 1000;
+    data.perfiles[0].headcount = 5;
+    data.criterios[0].peso = 40;
+    const out = normalizeAnalysisNumbers(data);
+    expect(out.lotes[0].importe).toBe(1000);
+    expect(out.perfiles[0].headcount).toBe(5);
+    expect(out.criterios[0].peso).toBe(40);
+    expect(out.lotes[0].descripcion).toBe('L1');
+    expect(out.resumen.objeto).toBe('x');
+  });
+
+  it('no muta el objeto de entrada', () => {
+    const data = build();
+    normalizeAnalysisNumbers(data);
+    expect(data.lotes[0].importe).toBe('');
+  });
+
+  it('es robusto ante secciones ausentes', () => {
+    expect(() => normalizeAnalysisNumbers({})).not.toThrow();
+    const out = normalizeAnalysisNumbers({});
+    expect(out).toEqual({});
   });
 });
 

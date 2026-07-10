@@ -14,10 +14,19 @@ describe('pliegoPatchSchema', () => {
     expect(pliegoPatchSchema.safeParse({}).success).toBe(false);
   });
 
-  it('rechaza campos desconocidos (id, expediente, analysisData no se tocan aquí)', () => {
+  it('rechaza campos desconocidos (id, expediente no se tocan aquí)', () => {
     expect(pliegoPatchSchema.safeParse({ id: 'x' }).success).toBe(false);
     expect(pliegoPatchSchema.safeParse({ expediente: '2026/9999' }).success).toBe(false);
+  });
+
+  it('acepta analysisData válido (patch combinado atómico cabecera + análisis)', () => {
+    expect(pliegoPatchSchema.safeParse({ analysisData: validAnalysis }).success).toBe(true);
+    expect(pliegoPatchSchema.safeParse({ importe: 3000000, analysisData: validAnalysis }).success).toBe(true);
+  });
+
+  it('rechaza un analysisData con shape inválido', () => {
     expect(pliegoPatchSchema.safeParse({ analysisData: {} }).success).toBe(false);
+    expect(pliegoPatchSchema.safeParse({ analysisData: { lotes: [{ numero: 1 }] } }).success).toBe(false);
   });
 
   it('rechaza un estado que no sea uno de los válidos', () => {
@@ -38,6 +47,11 @@ describe('pliegoPatchSchema', () => {
 
   it('rechaza importe con el tipo equivocado', () => {
     expect(pliegoPatchSchema.safeParse({ importe: 'mucho' }).success).toBe(false);
+  });
+
+  it('acepta importe null (campo vacío "sin valor"), pero no ""', () => {
+    expect(pliegoPatchSchema.safeParse({ importe: null }).success).toBe(true);
+    expect(pliegoPatchSchema.safeParse({ importe: '' }).success).toBe(false);
   });
 });
 
@@ -64,6 +78,25 @@ describe('analysisDataSchema', () => {
   it('rechaza propiedades adicionales no contempladas', () => {
     const invalido = { ...validAnalysis, campoInventado: true };
     expect(analysisDataSchema.safeParse(invalido).success).toBe(false);
+  });
+
+  it('acepta null en los campos numéricos editables (hueco "sin valor")', () => {
+    const conNulos = {
+      ...validAnalysis,
+      lotes: validAnalysis.lotes.map(l => ({ ...l, importe: null })),
+      perfiles: validAnalysis.perfiles.map(p => ({ ...p, headcount: null, experiencia: null })),
+      solvencia: {
+        tecnica: { ...validAnalysis.solvencia.tecnica, volumenNegocio: null },
+        economica: { seguroRC: null, capitalMinimo: null },
+      },
+      criterios: validAnalysis.criterios.map(c => ({ ...c, peso: null })),
+    };
+    expect(analysisDataSchema.safeParse(conNulos).success).toBe(true);
+  });
+
+  it('sigue rechazando "" en los campos numéricos (solo número o null)', () => {
+    const conVacio = { ...validAnalysis, lotes: validAnalysis.lotes.map(l => ({ ...l, importe: '' })) };
+    expect(analysisDataSchema.safeParse(conVacio).success).toBe(false);
   });
 });
 

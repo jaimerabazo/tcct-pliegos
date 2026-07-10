@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { Dashboard } from './App.jsx';
+import { Dashboard } from './Dashboard.jsx';
 
 const basePliego = (overrides) => ({
   id: '2026-0001',

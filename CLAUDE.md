@@ -55,7 +55,7 @@
   - Se corrigió un bug preexistente en el ribbon de `Analysis`: "Duración" y "Cierre de ofertas" estaban hardcodeados a los valores de 2026/7008; ahora se derivan de `data.resumen`/`data.plazos` (solo se notaba con datos reales distintos).
   - Migrado de OpenAI a Anthropic Claude por fallo de cuota/billing en la API key de OpenAI (ver §3). Jaime ya probó `vercel dev` en local con un pliego real y `ANTHROPIC_API_KEY`, y la extracción funciona.
 
-**En marcha — iniciativa "full-stack sólido"** (rama `feat/api-rest`), 4 fases (ver plan de la iniciativa):
+**En marcha — iniciativa "full-stack sólido"** (rama `re-structuring`), 4 fases (ver plan de la iniciativa):
 - [x] **Fase 1 — Prisma + Supabase**: modelo `Pliego` (`prisma/schema.prisma`), migración aplicada y seed de los 6 pliegos demo corrido contra la BD real de Supabase. Ver §5 y §9 para los detalles/gotchas de Prisma 7 que costó descubrir.
 - [x] **Fase 2 — API REST** (`/api/pliegos`):
   - `GET /api/pliegos` (`api/pliegos/index.js`), `GET`/`PATCH /api/pliegos/[id]` (`api/pliegos/[id].js`), `PATCH /api/pliegos/[id]/analysis` (`api/pliegos/[id]/analysis.js`). `api/analyze.js` ahora persiste el resultado (`prisma.pliego.upsert` por `expediente`, así que re-analizar el mismo expediente actualiza en vez de duplicar) en lugar de solo devolver el JSON de Claude.
@@ -63,10 +63,15 @@
   - **Patrón de testing**: igual que `prisma/seed.js`/`seed.test.js` (ya establecido por Jaime) — nada de `vi.mock`. Cada handler exporta su lógica núcleo recibiendo el cliente Prisma por parámetro (`listPliegos(client)`, `getPliego(client, id)`, etc.) y el `handler` por defecto acepta un tercer argumento opcional `client = prisma` (Vercel siempre lo llama con 2, así que en producción cae al singleton real; los tests le pasan un doble). Doble de Prisma en memoria compartido en `api/_lib/testFakePrisma.js` (soporta `findMany`/`findUnique`/`update`/`create`/`upsert`, lanza `P2025` si no encuentra el registro, igual que Prisma de verdad).
   - 101 tests, 100% cobertura en `src/logic.js` + `api/_lib/schemas.js` + los 3 handlers de `api/pliegos/*` (ampliado en `coverage.include`). El `handler` de `api/analyze.js` en sí (la llamada real a Claude) sigue sin test unitario — mismo criterio que `main()` en `seed.js`: se verifica a mano, no por CI. Sí se testean las funciones nuevas que añade esta fase (`toPliegoRowFromAnalysis`, `persistAnalysis`).
   - Verificado a mano contra la BD real de Supabase (no solo con el doble): `listPliegos`/`getPliego`/`updatePliego` ejecutados contra un pliego real de la BD.
-- [ ] Fase 3 — Reestructurar `App.jsx` en `src/api|components|views` + conectar con TanStack Query, eliminando `MOCK_PLIEGOS`/`MOCK_ANALYSIS` del frontend (pasan a vivir solo en `prisma/seed.js`).
+- [x] **Fase 3 — Reestructurar frontend + TanStack Query** (rama `re-structuring`):
+  - `App.jsx` (1531 líneas) partido en `src/api/pliegos.js` (cliente fetch + normalización de fechas ISO→corto), `src/components/*` (Sidebar, StatusBadge, UploadModal, section.jsx = SectionCard/SectionTitle/EditButton/SaveCancelButtons/ConfidenceBadge, fields.jsx = TextField/NumberField/…), `src/views/Dashboard.jsx` y `src/views/Analysis.jsx`. `App.jsx` queda como shell (~130 líneas): navegación + hooks de TanStack Query + modal.
+  - **Patrón contenedor/presentacional**: `Dashboard`/`Analysis` siguen siendo presentacionales (reciben `pliegos`/`pliego` + callbacks por props, misma firma que antes), así los tests de integración siguen prácticamente iguales (solo cambia la ruta de import). Toda la lógica de servidor vive en `App.jsx`: `useQuery(['pliegos'], listPliegos)` + `useMutation` para `updatePliego`/`updateAnalysis` que invalidan `['pliegos']`. `main.jsx` monta el `QueryClientProvider`.
+  - `MOCK_PLIEGOS`/`MOCK_ANALYSIS` **eliminados del frontend** (viven solo en `prisma/seed.js`). Un pliego sin `analysisData` ya no cae a datos demo de otro expediente: muestra un **estado vacío** ("Este pliego aún no se ha analizado en detalle") — decisión de Jaime, más correcto para datos reales.
+  - Reconciliación de shapes: `GET /api/pliegos` devuelve filas planas con fechas ISO; `src/api/pliegos.js` las normaliza a formato corto ("15 jul 2026") para que los componentes no cambien. `/api/analyze` devuelve `{ pliego, analysis }`; tras subir, el frontend invalida la lista y navega al `id` real.
+  - 119 tests, 100% cobertura en lo cubierto por `coverage.include` (+ `src/api/pliegos.js`). Verificado en navegador contra la BD real (vía servidor Node temporal + proxy de Vite, ya que el proyecto no está enlazado a `vercel dev`): subir/editar un lote → **recargar la página → el cambio persiste** (el objetivo de toda la iniciativa), más el estado vacío para pliegos sin análisis.
 - [ ] Fase 4 — CI (GitHub Actions) + ampliar `coverage.include`.
 
-**Pendiente inmediato**: Fase 3 (reestructurar frontend + TanStack Query). Aparte, sigue abierto el PR de `feat/connect-api` a `main`, y el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma).
+**Pendiente inmediato**: Fase 4 (CI). Aparte, sigue abierto el PR de `feat/connect-api` a `main`, y el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma).
 
 **Aviso registrado**: URL de Vercel es pública por defecto. Ahora que la extracción es real (aunque sea con archivos de prueba), conviene activar Vercel Password Protection o SSO antes de compartir la URL ampliamente. Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar.
 
@@ -77,6 +82,7 @@
 ```
 Vite 5           bundler y dev server
 React 18         UI
+TanStack Query 5 estado de servidor (fetch/cache/invalidación) en el frontend
 Tailwind CSS 3   styling utility-first
 lucide-react     iconografía outline
 Google Fonts     Space Grotesk + Inter + JetBrains Mono
@@ -184,10 +190,14 @@ tcct-pliegos/
 ├── .gitignore
 ├── README.md                   instrucciones de despliegue
 └── src/
-    ├── main.jsx                entry ReactDOM
+    ├── main.jsx                entry ReactDOM + QueryClientProvider (TanStack Query)
+    ├── App.jsx                 shell (~130 líneas): navegación + hooks de Query + modal
     ├── index.css               @tailwind directives + @keyframes pulse + @keyframes indeterminate
-    ├── generated/prisma/       Cliente Prisma generado (gitignored, se regenera con `prisma generate`/postinstall)
-    └── App.jsx                 TODO el componente de frontend en un solo archivo (~1050 líneas) — se reestructura en la Fase 3
+    ├── logic.js                lógica pura (formateo, computeDashboardKpis, getLotesSumMismatch) + tests
+    ├── api/pliegos.js          cliente fetch (listPliegos, analyzePdf, updatePliego, updateAnalysis) + normalización de fechas
+    ├── components/             Sidebar, StatusBadge, UploadModal, section.jsx, fields.jsx
+    ├── views/                  Dashboard.jsx, Analysis.jsx (presentacionales) + sus *.test.jsx
+    └── generated/prisma/       Cliente Prisma generado (gitignored, se regenera con `prisma generate`/postinstall)
 ```
 
 **`api/analyze.js`** (Node, runtime Vercel, `maxDuration: 300`):
@@ -197,15 +207,14 @@ tcct-pliegos/
 
 **`api/pliegos/*`**: cada handler exporta su lógica núcleo recibiendo el cliente Prisma por parámetro (`listPliegos(client)`, `getPliego(client, id)`, `updatePliego(client, id, patch)`, `updateAnalysis(client, id, analysisData)`) y el `handler` por defecto acepta un tercer argumento opcional `client = prisma` — así los tests inyectan el doble de `api/_lib/testFakePrisma.js` sin `vi.mock` (Vercel siempre llama con 2 argumentos, así que en producción cae al singleton real). `PATCH` valida el body con los schemas Zod correspondientes antes de tocar la BD; un `P2025` de Prisma (registro no encontrado) se traduce a 404.
 
-**`src/App.jsx`** contiene:
-- Constantes `MOCK_PLIEGOS` y `MOCK_ANALYSIS` al inicio — siguen siendo el fallback/demo para expedientes no analizados aún vía API.
-- Helpers `formatEuro`, `formatEuroFull`, `formatShortDate`, `slugify`, `StatusBadge`, `ConfidenceBadge`.
-- Subcomponentes: `Sidebar`, `KpiCard`, `Dashboard`, `SectionCard`, `SectionTitle`, `Analysis`, `UploadModal`.
-- Constante `SECTIONS` con el índice del análisis (7 secciones).
-- Constante `UPLOAD_STEPS` con los mensajes que rota `UploadModal` mientras espera la respuesta real de `/api/analyze`.
-- Componente raíz `App`: `pliegos` en `useState` (arranca con `MOCK_PLIEGOS`, se le añaden los análisis reales), navegación `view`/`selectedPliego`, `showUploadModal`.
+**Frontend** (tras la Fase 3, ya no es un único archivo):
+- `src/App.jsx` — shell: `useQuery(['pliegos'], listPliegos)` como única fuente de verdad, `useMutation` para editar cabecera/análisis (invalidan la query), navegación `view`/`selectedId`, y estados de carga/error de la lista. Baja datos + callbacks a las vistas por props.
+- `src/views/Dashboard.jsx` y `src/views/Analysis.jsx` — **presentacionales** (reciben datos por props, sin hooks de red). `Analysis` muestra estado vacío si `pliego.analysisData` es null (ya no hay fallback demo). `KpiCard`/`OrganismoBar` viven inline en Dashboard; `SECTIONS` y el estado de edición inline en Analysis.
+- `src/components/` — piezas compartidas: `Sidebar`, `StatusBadge`, `UploadModal` (usa `analyzePdf` del cliente), `section.jsx`, `fields.jsx`.
+- `src/api/pliegos.js` — cliente HTTP + normalización BD→UI de fechas.
+- Ya **no hay `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en el frontend**; los datos demo viven solo en `prisma/seed.js`.
 
-**No usa (todavía)**: routing library (solo state), autenticación, localStorage/sessionStorage. Ya usa backend (`api/analyze.js`) y base de datos real (Supabase vía Prisma, ver §5) desde la Fase 1 de la iniciativa full-stack — el frontend aún no la consume (eso es la Fase 3).
+**No usa (todavía)**: routing library (solo state en `App`), autenticación, localStorage/sessionStorage. Desde la Fase 3 el frontend consume la API real (Supabase vía Prisma) con TanStack Query — un análisis editado sobrevive a recargar la página.
 
 ---
 
@@ -309,4 +318,4 @@ Los 5 bloques del flujo TCCT y los cuellos de botella identificados (por si el p
 
 ---
 
-*Última actualización: 06/07/2026 · Fase actual: mockup desplegado en Vercel, modal de upload mergeado a `main`. Extracción real vía API de Anthropic Claude en `feat/connect-api`, **confirmada funcionando con un pliego real**, pendiente de PR/merge a `main`. Vista de comparativa entre pliegos aparcada mientras tanto.*
+*Última actualización: 10/07/2026 · Fase actual: iniciativa "full-stack sólido" — Fases 1 (Prisma+Supabase), 2 (API REST) y 3 (reestructura frontend + TanStack Query) completadas en la rama `re-structuring`; el frontend ya consume la BD real y las ediciones persisten tras recargar. Pendiente: Fase 4 (CI). Aparte, sigue abierto el PR de `feat/connect-api` a `main`; comparativa entre pliegos aparcada.*

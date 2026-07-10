@@ -12,6 +12,7 @@ export default defineConfig({
       reporter: ['text', 'html'],
       include: [
         'src/logic.js',
+        'src/api/pliegos.js',
         'api/_lib/schemas.js',
         'api/pliegos/index.js',
         'api/pliegos/[id].js',

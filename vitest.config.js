@@ -10,7 +10,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['src/logic.js'],
+      include: [
+        'src/logic.js',
+        'api/_lib/schemas.js',
+        'api/pliegos/index.js',
+        'api/pliegos/[id].js',
+        'api/pliegos/[id]/analysis.js',
+      ],
       thresholds: {
         lines: 90,
         functions: 90,

@@ -42,6 +42,20 @@ describe('parseShortDate', () => {
     // Independiente del huso horario: siempre medianoche UTC, no el día anterior.
     expect(d.toISOString()).toBe('2026-07-15T00:00:00.000Z');
   });
+
+  it('devuelve null para "No especificado" (lo que Claude emite sin fecha)', () => {
+    // No debe producir un Invalid Date: reventaría el upsert de Prisma con un 502.
+    expect(parseShortDate('No especificado')).toBeNull();
+  });
+
+  it('devuelve null para strings que no encajan con "DD mes AAAA"', () => {
+    expect(parseShortDate('')).toBeNull();
+    expect(parseShortDate(null)).toBeNull();
+    expect(parseShortDate(undefined)).toBeNull();
+    expect(parseShortDate('15 xxx 2026')).toBeNull(); // mes desconocido
+    expect(parseShortDate('quince jul 2026')).toBeNull(); // día no numérico
+    expect(parseShortDate('15 jul añoquesea')).toBeNull(); // año no numérico
+  });
 });
 
 describe('toPliegoRow', () => {

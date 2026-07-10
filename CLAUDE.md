@@ -55,13 +55,18 @@
   - Se corrigió un bug preexistente en el ribbon de `Analysis`: "Duración" y "Cierre de ofertas" estaban hardcodeados a los valores de 2026/7008; ahora se derivan de `data.resumen`/`data.plazos` (solo se notaba con datos reales distintos).
   - Migrado de OpenAI a Anthropic Claude por fallo de cuota/billing en la API key de OpenAI (ver §3). Jaime ya probó `vercel dev` en local con un pliego real y `ANTHROPIC_API_KEY`, y la extracción funciona.
 
-**En marcha — iniciativa "full-stack sólido"** (rama `feat/prisma-supabase`), 4 fases (ver plan de la iniciativa):
+**En marcha — iniciativa "full-stack sólido"** (rama `feat/api-rest`), 4 fases (ver plan de la iniciativa):
 - [x] **Fase 1 — Prisma + Supabase**: modelo `Pliego` (`prisma/schema.prisma`), migración aplicada y seed de los 6 pliegos demo corrido contra la BD real de Supabase. Ver §5 y §9 para los detalles/gotchas de Prisma 7 que costó descubrir.
-- [ ] Fase 2 — API REST (`/api/pliegos`) con Zod + tests con Prisma mockeado.
+- [x] **Fase 2 — API REST** (`/api/pliegos`):
+  - `GET /api/pliegos` (`api/pliegos/index.js`), `GET`/`PATCH /api/pliegos/[id]` (`api/pliegos/[id].js`), `PATCH /api/pliegos/[id]/analysis` (`api/pliegos/[id]/analysis.js`). `api/analyze.js` ahora persiste el resultado (`prisma.pliego.upsert` por `expediente`, así que re-analizar el mismo expediente actualiza en vez de duplicar) en lugar de solo devolver el JSON de Claude.
+  - Validación con **Zod** (`api/_lib/schemas.js`): `pliegoPatchSchema` (cabecera, parcial), `analysisDataSchema` (mismo shape que `PLIEGO_ANALYSIS_SCHEMA` de Claude, pero en Zod — se repite el contrato porque JSON Schema y Zod son DSLs distintos, no se puede compartir el objeto literal), `pliegoFromAnalysisSchema` (valida lo que devuelve Claude antes de persistir, defensa en profundidad aunque el `json_schema` de Structured Outputs ya debería garantizarlo).
+  - **Patrón de testing**: igual que `prisma/seed.js`/`seed.test.js` (ya establecido por Jaime) — nada de `vi.mock`. Cada handler exporta su lógica núcleo recibiendo el cliente Prisma por parámetro (`listPliegos(client)`, `getPliego(client, id)`, etc.) y el `handler` por defecto acepta un tercer argumento opcional `client = prisma` (Vercel siempre lo llama con 2, así que en producción cae al singleton real; los tests le pasan un doble). Doble de Prisma en memoria compartido en `api/_lib/testFakePrisma.js` (soporta `findMany`/`findUnique`/`update`/`create`/`upsert`, lanza `P2025` si no encuentra el registro, igual que Prisma de verdad).
+  - 101 tests, 100% cobertura en `src/logic.js` + `api/_lib/schemas.js` + los 3 handlers de `api/pliegos/*` (ampliado en `coverage.include`). El `handler` de `api/analyze.js` en sí (la llamada real a Claude) sigue sin test unitario — mismo criterio que `main()` en `seed.js`: se verifica a mano, no por CI. Sí se testean las funciones nuevas que añade esta fase (`toPliegoRowFromAnalysis`, `persistAnalysis`).
+  - Verificado a mano contra la BD real de Supabase (no solo con el doble): `listPliegos`/`getPliego`/`updatePliego` ejecutados contra un pliego real de la BD.
 - [ ] Fase 3 — Reestructurar `App.jsx` en `src/api|components|views` + conectar con TanStack Query, eliminando `MOCK_PLIEGOS`/`MOCK_ANALYSIS` del frontend (pasan a vivir solo en `prisma/seed.js`).
 - [ ] Fase 4 — CI (GitHub Actions) + ampliar `coverage.include`.
 
-**Pendiente inmediato**: Fase 2 (API REST). Aparte, sigue abierto el PR de `feat/connect-api` a `main`, y el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma).
+**Pendiente inmediato**: Fase 3 (reestructurar frontend + TanStack Query). Aparte, sigue abierto el PR de `feat/connect-api` a `main`, y el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma).
 
 **Aviso registrado**: URL de Vercel es pública por defecto. Ahora que la extracción es real (aunque sea con archivos de prueba), conviene activar Vercel Password Protection o SSO antes de compartir la URL ampliamente. Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar.
 
@@ -78,9 +83,9 @@ Google Fonts     Space Grotesk + Inter + JetBrains Mono
 Vitest 4         test runner (+ @testing-library/react, jsdom)
 ```
 
-**Testing**: `npm run test` (una vez), `npm run test:watch`, `npm run test:coverage`. La lógica de negocio pura vive en `src/logic.js` (formateo, `computeDashboardKpis`, `getLotesSumMismatch`) con tests en `src/logic.test.js` — umbral de cobertura ≥90% (líneas/funciones/branches/statements) configurado en `vitest.config.js`, acotado por ahora a `src/logic.js` (`coverage.include`). Regla acordada con Jaime: **toda feature nueva debe llevar tests con ≥90% de cobertura** de su lógica; se amplía el `include` según se vayan cubriendo más partes. `src/Dashboard.test.jsx` y `src/Analysis.test.jsx` son tests de integración ligeros con React Testing Library (no cuentan para el umbral, son un plus).
+**Testing**: `npm run test` (una vez), `npm run test:watch`, `npm run test:coverage`. La lógica de negocio pura vive en `src/logic.js` (formateo, `computeDashboardKpis`, `getLotesSumMismatch`) con tests en `src/logic.test.js` — umbral de cobertura ≥90% (líneas/funciones/branches/statements) configurado en `vitest.config.js`, acotado por ahora a `src/logic.js` + `api/_lib/schemas.js` + los handlers de `api/pliegos/*` (`coverage.include`). Regla acordada con Jaime: **toda feature nueva debe llevar tests con ≥90% de cobertura** de su lógica; se amplía el `include` según se vayan cubriendo más partes. Patrón de testing para el backend: inyección del cliente Prisma por parámetro (nunca `vi.mock`), con un doble en memoria en `api/_lib/testFakePrisma.js` — ver §10 Fase 2 para el detalle. `src/Dashboard.test.jsx` y `src/Analysis.test.jsx` son tests de integración ligeros con React Testing Library (no cuentan para el umbral, son un plus).
 
-**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.parse()` con `output_config.format: json_schema` para la extracción. Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. Los pliegos aún no analizados con la API siguen viniendo de `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en `src/App.jsx` (hasta la Fase 3 de la iniciativa full-stack).
+**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.create()` con `output_config.format: json_schema` para la extracción, valida el resultado con Zod (`api/_lib/schemas.js`) y lo persiste (`prisma.pliego.upsert` por `expediente`). Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. API REST completa en `api/pliegos/` (listar, obtener, actualizar cabecera, actualizar análisis) — ver §10 Fase 2. El frontend (`src/App.jsx`) todavía no consume ninguno de estos endpoints; sigue con `MOCK_PLIEGOS`/`MOCK_ANALYSIS` hasta la Fase 3.
 
 **Base de datos**: Supabase (Postgres) + Prisma 7 (`prisma/schema.prisma`, modelo único `Pliego` con `analysisData Json?`). Un par de cosas no obvias de Prisma 7 que costó descubrir, para no volver a perder tiempo:
 - **La conexión "Direct" de Supabase es IPv6-only** (sin registro DNS A, solo AAAA) salvo que pagues el add-on de IPv4 — inalcanzable desde Vercel y desde muchos entornos de desarrollo. Hay que usar el **connection pooler** (Supabase dashboard → Settings → Database → "Session pooler", host `*.pooler.supabase.com`, puerto 5432) como `DATABASE_URL`.
@@ -149,15 +154,30 @@ marco          ENS Alto, CCN-STIC 803/804/810/811, RGPD, LOPDGDD, RD 311/2022
 ```
 tcct-pliegos/
 ├── api/
-│   ├── analyze.js              Vercel Function: envía el PDF a Claude y extrae el JSON estructurado
-│   └── _lib/prisma.js          Cliente Prisma singleton (driver adapter @prisma/adapter-pg)
+│   ├── analyze.js              Vercel Function: envía el PDF a Claude, valida y persiste el resultado
+│   ├── analyze.test.js
+│   ├── pliegos/
+│   │   ├── index.js            GET /api/pliegos (listar)
+│   │   ├── index.test.js
+│   │   ├── [id].js             GET/PATCH /api/pliegos/[id] (uno / actualizar cabecera)
+│   │   ├── [id].test.js
+│   │   └── [id]/
+│   │       ├── analysis.js     PATCH /api/pliegos/[id]/analysis (actualizar analysisData)
+│   │       └── analysis.test.js
+│   └── _lib/
+│       ├── prisma.js           Cliente Prisma singleton (driver adapter @prisma/adapter-pg)
+│       ├── schemas.js          Schemas Zod (pliegoPatchSchema, analysisDataSchema, pliegoFromAnalysisSchema)
+│       ├── schemas.test.js
+│       ├── testFakePrisma.js   Doble en memoria de PrismaClient para tests (findMany/findUnique/update/create/upsert)
+│       └── testFakeRes.js      Doble mínimo del objeto `res` de Vercel para tests
 ├── prisma/
 │   ├── schema.prisma           Modelo Pliego (analysisData como Json)
-│   ├── seed.js                 Puebla los 6 pliegos demo (idempotente)
+│   ├── seed.js                 Puebla los 6 pliegos demo (idempotente); exporta MOCK_PLIEGOS/MOCK_ANALYSIS
+│   ├── seed.test.js
 │   └── migrations/
 ├── prisma.config.ts            Config de la CLI de Prisma (lee .env.local)
 ├── index.html                  Carga Google Fonts en <head>
-├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, @anthropic-ai/sdk, prisma
+├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, @anthropic-ai/sdk, prisma, zod
 ├── vite.config.js              plugin-react
 ├── tailwind.config.js          extend con paleta tt-*
 ├── postcss.config.js           tailwind + autoprefixer
@@ -170,10 +190,12 @@ tcct-pliegos/
     └── App.jsx                 TODO el componente de frontend en un solo archivo (~1050 líneas) — se reestructura en la Fase 3
 ```
 
-**`api/analyze.js`** (Node, runtime Vercel, `maxDuration: 60`):
+**`api/analyze.js`** (Node, runtime Vercel, `maxDuration: 300`):
 - Lee el PDF como cuerpo binario crudo (`Content-Type: application/pdf`, nombre en cabecera `X-Filename`), sin multipart ni base64.
-- `anthropic.messages.parse({ model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5', ... })` con `output_config.format: { type: 'json_schema', schema: PLIEGO_ANALYSIS_SCHEMA }` (mismo shape que `MOCK_ANALYSIS` + un bloque `pliego` para la fila del dashboard).
-- Devuelve `{ pliego, analysis }` o `{ error }`. No usa Files API; el PDF viaja en base64 en la misma request a Claude.
+- `anthropic.messages.create({ model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5', ... })` con `output_config.format: { type: 'json_schema', schema: PLIEGO_ANALYSIS_SCHEMA }` (mismo shape que `MOCK_ANALYSIS` + un bloque `pliego` para la fila del dashboard).
+- Valida la respuesta con `pliegoFromAnalysisSchema`/`analysisDataSchema` (Zod, defensa en profundidad) y la persiste con `persistAnalysis()` (`prisma.pliego.upsert` por `expediente` — reanalizar el mismo expediente actualiza, no duplica). Devuelve la fila persistida (con `id` real de la BD) o `{ error }`. No usa Files API; el PDF viaja en base64 en la misma request a Claude.
+
+**`api/pliegos/*`**: cada handler exporta su lógica núcleo recibiendo el cliente Prisma por parámetro (`listPliegos(client)`, `getPliego(client, id)`, `updatePliego(client, id, patch)`, `updateAnalysis(client, id, analysisData)`) y el `handler` por defecto acepta un tercer argumento opcional `client = prisma` — así los tests inyectan el doble de `api/_lib/testFakePrisma.js` sin `vi.mock` (Vercel siempre llama con 2 argumentos, así que en producción cae al singleton real). `PATCH` valida el body con los schemas Zod correspondientes antes de tocar la BD; un `P2025` de Prisma (registro no encontrado) se traduce a 404.
 
 **`src/App.jsx`** contiene:
 - Constantes `MOCK_PLIEGOS` y `MOCK_ANALYSIS` al inicio — siguen siendo el fallback/demo para expedientes no analizados aún vía API.

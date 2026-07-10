@@ -37,6 +37,16 @@ describe('toPliegoRowFromAnalysis', () => {
     expect(row.fechaLimite).toBeInstanceOf(Date);
   });
 
+  it('deja fechaLimite en null cuando Claude devuelve "No especificado"', () => {
+    // Antes esto producía un Invalid Date que hacía fallar el upsert de Prisma
+    // (502 genérico). fechaLimite es nullable, así que null es lo correcto.
+    const row = toPliegoRowFromAnalysis({
+      ...sampleResult,
+      pliego: { ...sampleResult.pliego, fechaLimite: 'No especificado' },
+    });
+    expect(row.fechaLimite).toBeNull();
+  });
+
   it('fija fechaAnalisis a la fecha actual', () => {
     const before = Date.now();
     const row = toPliegoRowFromAnalysis(sampleResult);

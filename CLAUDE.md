@@ -39,39 +39,41 @@
 | **Persistencia real: Supabase (Postgres) + Prisma** | Jaime decide "tomarse en serio" el proyecto — pasar de `useState`/mock a un backend sólido. Supabase en vez de Vercel Postgres porque da Auth/Storage de serie para más adelante. |
 | **TanStack Query para el estado de servidor en frontend** | Evita reinventar cache/loading/error a mano según crece la app; sustituye a los `useState`+handlers dispersos de hoy. |
 | **`analysisData` como columna JSON, sin normalizar en tablas** | Minimiza la reescritura del shape que ya consume `Analysis`; se normaliza más adelante solo si hace falta analítica cruzada entre pliegos. |
+| **CI con GitHub Actions** | Convierte el umbral de cobertura ≥90% en un gate real en push/PR a `main`/`develop`, no una norma verbal. |
 
 ---
 
-## 4. Estado actual (06/07/2026)
+## 4. Estado actual (10/07/2026)
 
 **Entregado**:
-- Repo `tcct-pliegos` en GitHub (`jaimerabazo/tcct-pliegos`), con `main` ya desplegado.
-- Mockup funcional en React (Vite + React 18 + Tailwind 3 + lucide-react + Google Fonts precargadas).
-- `feat/upload-pdf` (mergeada): modal de upload con drag & drop del PDF.
-- `feat/connect-api` (implementada y **confirmada funcionando con un pliego real**, pendiente de PR/merge): extracción real vía **API de Anthropic Claude**.
-  - `api/analyze.js` (Vercel Function, Node): recibe el PDF en crudo, lo envía a Claude como bloque `document` en base64, llama a `messages.create()` con `model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'` y `output_config.format: json_schema` (Structured Outputs) para forzar un JSON con el mismo shape que `MOCK_ANALYSIS`. `max_tokens: 20000`, `maxDuration: 300` (también fijado en `vercel.json` porque `export const config` no bastó en el runtime de Vercel).
-  - `UploadModal` ya no simula el progreso: hace `fetch('/api/analyze', ...)` de verdad, rota los mensajes de `UPLOAD_STEPS` mientras espera (barra indeterminada, no hay % real) y tiene un estado de error con "Reintentar" / "Elegir otro archivo".
-  - `MOCK_PLIEGOS` pasó a vivir en `useState` dentro de `App`; cada análisis real se añade como fila nueva (`estado: 'analizado'`, con `analysisData` colgando del propio pliego) y `Analysis` prioriza `pliego.analysisData` sobre el mock.
-  - Se corrigió un bug preexistente en el ribbon de `Analysis`: "Duración" y "Cierre de ofertas" estaban hardcodeados a los valores de 2026/7008; ahora se derivan de `data.resumen`/`data.plazos` (solo se notaba con datos reales distintos).
-  - Migrado de OpenAI a Anthropic Claude por fallo de cuota/billing en la API key de OpenAI (ver §3). Jaime ya probó `vercel dev` en local con un pliego real y `ANTHROPIC_API_KEY`, y la extracción funciona.
+- Repo `tcct-pliegos` en GitHub (`jaimerabazo/tcct-pliegos`), con `main` desplegado en Vercel.
+- App React (Vite + React 18 + Tailwind 3 + lucide-react + TanStack Query 5 + Google Fonts precargadas).
+- Modal de upload con drag & drop del PDF (`feat/upload-pdf`, mergeada).
+- Extracción real vía **API de Anthropic Claude** (`feat/connect-api`, mergeada):
+  - `api/analyze.js` (Vercel Function, Node): recibe el PDF en crudo, lo envía a Claude como bloque `document` en base64, llama a `messages.create()` con `model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'` y `output_config.format: json_schema` (Structured Outputs). `max_tokens: 20000`, `maxDuration: 300` (también fijado en `vercel.json`).
+  - `UploadModal` hace `fetch('/api/analyze', ...)` de verdad, rota los mensajes de `UPLOAD_STEPS` mientras espera (barra indeterminada) y tiene estado de error con "Reintentar" / "Elegir otro archivo".
+  - Se corrigió un bug en el ribbon de `Analysis`: "Duración" y "Cierre de ofertas" ya no están hardcodeados a 2026/7008; se derivan de `data.resumen`/`data.plazos`.
+  - Migrado de OpenAI a Anthropic Claude por fallo de cuota/billing en la API key de OpenAI (ver §3). Probado con un pliego real en `vercel dev`.
 
-**En marcha — iniciativa "full-stack sólido"** (rama `re-structuring`), 4 fases (ver plan de la iniciativa):
+**Iniciativa "full-stack sólido" — completada** (mergeada a `main` vía PRs #9–#12), 4 fases:
 - [x] **Fase 1 — Prisma + Supabase**: modelo `Pliego` (`prisma/schema.prisma`), migración aplicada y seed de los 6 pliegos demo corrido contra la BD real de Supabase. Ver §5 y §9 para los detalles/gotchas de Prisma 7 que costó descubrir.
 - [x] **Fase 2 — API REST** (`/api/pliegos`):
   - `GET /api/pliegos` (`api/pliegos/index.js`), `GET`/`PATCH /api/pliegos/[id]` (`api/pliegos/[id].js`), `PATCH /api/pliegos/[id]/analysis` (`api/pliegos/[id]/analysis.js`). `api/analyze.js` ahora persiste el resultado (`prisma.pliego.upsert` por `expediente`, así que re-analizar el mismo expediente actualiza en vez de duplicar) en lugar de solo devolver el JSON de Claude.
   - Validación con **Zod** (`api/_lib/schemas.js`): `pliegoPatchSchema` (cabecera, parcial), `analysisDataSchema` (mismo shape que `PLIEGO_ANALYSIS_SCHEMA` de Claude, pero en Zod — se repite el contrato porque JSON Schema y Zod son DSLs distintos, no se puede compartir el objeto literal), `pliegoFromAnalysisSchema` (valida lo que devuelve Claude antes de persistir, defensa en profundidad aunque el `json_schema` de Structured Outputs ya debería garantizarlo).
   - **Patrón de testing**: igual que `prisma/seed.js`/`seed.test.js` (ya establecido por Jaime) — nada de `vi.mock`. Cada handler exporta su lógica núcleo recibiendo el cliente Prisma por parámetro (`listPliegos(client)`, `getPliego(client, id)`, etc.) y el `handler` por defecto acepta un tercer argumento opcional `client = prisma` (Vercel siempre lo llama con 2, así que en producción cae al singleton real; los tests le pasan un doble). Doble de Prisma en memoria compartido en `api/_lib/testFakePrisma.js` (soporta `findMany`/`findUnique`/`update`/`create`/`upsert`, lanza `P2025` si no encuentra el registro, igual que Prisma de verdad).
   - 101 tests, 100% cobertura en `src/logic.js` + `api/_lib/schemas.js` + los 3 handlers de `api/pliegos/*` (ampliado en `coverage.include`). El `handler` de `api/analyze.js` en sí (la llamada real a Claude) sigue sin test unitario — mismo criterio que `main()` en `seed.js`: se verifica a mano, no por CI. Sí se testean las funciones nuevas que añade esta fase (`toPliegoRowFromAnalysis`, `persistAnalysis`).
-  - Verificado a mano contra la BD real de Supabase (no solo con el doble): `listPliegos`/`getPliego`/`updatePliego` ejecutados contra un pliego real de la BD.
 - [x] **Fase 3 — Reestructurar frontend + TanStack Query** (rama `re-structuring`):
   - `App.jsx` (1531 líneas) partido en `src/api/pliegos.js` (cliente fetch + normalización de fechas ISO→corto), `src/components/*` (Sidebar, StatusBadge, UploadModal, section.jsx = SectionCard/SectionTitle/EditButton/SaveCancelButtons/ConfidenceBadge, fields.jsx = TextField/NumberField/…), `src/views/Dashboard.jsx` y `src/views/Analysis.jsx`. `App.jsx` queda como shell (~130 líneas): navegación + hooks de TanStack Query + modal.
   - **Patrón contenedor/presentacional**: `Dashboard`/`Analysis` siguen siendo presentacionales (reciben `pliegos`/`pliego` + callbacks por props, misma firma que antes), así los tests de integración siguen prácticamente iguales (solo cambia la ruta de import). Toda la lógica de servidor vive en `App.jsx`: `useQuery(['pliegos'], listPliegos)` + `useMutation` para `updatePliego`/`updateAnalysis` que invalidan `['pliegos']`. `main.jsx` monta el `QueryClientProvider`.
   - `MOCK_PLIEGOS`/`MOCK_ANALYSIS` **eliminados del frontend** (viven solo en `prisma/seed.js`). Un pliego sin `analysisData` ya no cae a datos demo de otro expediente: muestra un **estado vacío** ("Este pliego aún no se ha analizado en detalle") — decisión de Jaime, más correcto para datos reales.
   - Reconciliación de shapes: `GET /api/pliegos` devuelve filas planas con fechas ISO; `src/api/pliegos.js` las normaliza a formato corto ("15 jul 2026") para que los componentes no cambien. `/api/analyze` devuelve `{ pliego, analysis }`; tras subir, el frontend invalida la lista y navega al `id` real.
-  - 119 tests, 100% cobertura en lo cubierto por `coverage.include` (+ `src/api/pliegos.js`). Verificado en navegador contra la BD real (vía servidor Node temporal + proxy de Vite, ya que el proyecto no está enlazado a `vercel dev`): subir/editar un lote → **recargar la página → el cambio persiste** (el objetivo de toda la iniciativa), más el estado vacío para pliegos sin análisis.
-- [ ] Fase 4 — CI (GitHub Actions) + ampliar `coverage.include`.
+  - 119 tests, 100% cobertura en lo cubierto por `coverage.include` (+ `src/api/pliegos.js`). Verificado en navegador contra la BD real: subir/editar un lote → **recargar la página → el cambio persiste**, más el estado vacío para pliegos sin análisis.
+- [x] **Fase 4 — CI + cobertura ampliada** (rama `coverage`, PR #12):
+  - `.github/workflows/ci.yml`: en cada push/PR a `main`/`develop`, corre `npm ci`, `npm run test:coverage`, `npm run build`. No necesita `DATABASE_URL` en CI (`prisma generate` solo lee el schema; los tests usan el doble en memoria).
+  - `coverage.include` en `vitest.config.js` ya cubre `src/logic.js`, `src/api/pliegos.js`, `api/_lib/schemas.js` y los 3 handlers de `api/pliegos/*`.
+  - **133 tests**, 100% cobertura en todo lo incluido (umbral ≥90% configurado en `vitest.config.js`).
 
-**Pendiente inmediato**: Fase 4 (CI). Aparte, sigue abierto el PR de `feat/connect-api` a `main`, y el resto del backlog corto plazo (vista de comparativa, ajustar mocks, histograma).
+**Pendiente inmediato**: backlog corto plazo (vista de comparativa, ajustar mocks del seed, exportación Excel). Siguiente caso de uso prioritario: generador de borrador RFP (§11).
 
 **Aviso registrado**: URL de Vercel es pública por defecto. Ahora que la extracción es real (aunque sea con archivos de prueba), conviene activar Vercel Password Protection o SSO antes de compartir la URL ampliamente. Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar.
 
@@ -89,9 +91,9 @@ Google Fonts     Space Grotesk + Inter + JetBrains Mono
 Vitest 4         test runner (+ @testing-library/react, jsdom)
 ```
 
-**Testing**: `npm run test` (una vez), `npm run test:watch`, `npm run test:coverage`. La lógica de negocio pura vive en `src/logic.js` (formateo, `computeDashboardKpis`, `getLotesSumMismatch`) con tests en `src/logic.test.js` — umbral de cobertura ≥90% (líneas/funciones/branches/statements) configurado en `vitest.config.js`, acotado por ahora a `src/logic.js` + `api/_lib/schemas.js` + los handlers de `api/pliegos/*` (`coverage.include`). Regla acordada con Jaime: **toda feature nueva debe llevar tests con ≥90% de cobertura** de su lógica; se amplía el `include` según se vayan cubriendo más partes. Patrón de testing para el backend: inyección del cliente Prisma por parámetro (nunca `vi.mock`), con un doble en memoria en `api/_lib/testFakePrisma.js` — ver §10 Fase 2 para el detalle. `src/Dashboard.test.jsx` y `src/Analysis.test.jsx` son tests de integración ligeros con React Testing Library (no cuentan para el umbral, son un plus).
+**Testing**: `npm run test` (una vez), `npm run test:watch`, `npm run test:coverage`. La lógica de negocio pura vive en `src/logic.js` (formateo, `computeDashboardKpis`, `getLotesSumMismatch`) con tests en `src/logic.test.js` — umbral de cobertura ≥90% (líneas/funciones/branches/statements) configurado en `vitest.config.js`, acotado a `src/logic.js` + `src/api/pliegos.js` + `api/_lib/schemas.js` + los handlers de `api/pliegos/*` (`coverage.include`). Regla acordada con Jaime: **toda feature nueva debe llevar tests con ≥90% de cobertura** de su lógica; se amplía el `include` según se vayan cubriendo más partes. Patrón de testing para el backend: inyección del cliente Prisma por parámetro (nunca `vi.mock`), con un doble en memoria en `api/_lib/testFakePrisma.js` — ver §10 Fase 2 para el detalle. `src/views/Dashboard.test.jsx` y `src/views/Analysis.test.jsx` son tests de integración ligeros con React Testing Library (no cuentan para el umbral, son un plus). **CI** (`.github/workflows/ci.yml`): gate automático en push/PR a `main`/`develop`.
 
-**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.create()` con `output_config.format: json_schema` para la extracción, valida el resultado con Zod (`api/_lib/schemas.js`) y lo persiste (`prisma.pliego.upsert` por `expediente`). Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. API REST completa en `api/pliegos/` (listar, obtener, actualizar cabecera, actualizar análisis) — ver §10 Fase 2. El frontend (`src/App.jsx`) todavía no consume ninguno de estos endpoints; sigue con `MOCK_PLIEGOS`/`MOCK_ANALYSIS` hasta la Fase 3.
+**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.create()` con `output_config.format: json_schema` para la extracción, valida el resultado con Zod (`api/_lib/schemas.js`) y lo persiste (`prisma.pliego.upsert` por `expediente`). Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. API REST completa en `api/pliegos/` (listar, obtener, actualizar cabecera, actualizar análisis) — ver §10 Fase 2. El frontend consume estos endpoints vía TanStack Query (`src/App.jsx` + `src/api/pliegos.js`).
 
 **Base de datos**: Supabase (Postgres) + Prisma 7 (`prisma/schema.prisma`, modelo único `Pliego` con `analysisData Json?`). Un par de cosas no obvias de Prisma 7 que costó descubrir, para no volver a perder tiempo:
 - **La conexión "Direct" de Supabase es IPv6-only** (sin registro DNS A, solo AAAA) salvo que pagues el add-on de IPv4 — inalcanzable desde Vercel y desde muchos entornos de desarrollo. Hay que usar el **connection pooler** (Supabase dashboard → Settings → Database → "Session pooler", host `*.pooler.supabase.com`, puerto 5432) como `DATABASE_URL`.
@@ -130,9 +132,11 @@ Estados: verde #00A67C (analizado), naranja #F5A623 (revisión), rojo #E24B4A (e
 
 ---
 
-## 7. Estructura de datos mock
+## 7. Datos demo (seed)
 
-**Dashboard**: 6 expedientes en `MOCK_PLIEGOS`:
+Los 6 expedientes demo viven en `prisma/seed.js` (ya no en el frontend). Correr `npm run db:seed` los inserta/actualiza en Supabase de forma idempotente (`upsert` por `expediente`).
+
+**Dashboard** — 6 expedientes:
 1. `2026/7008` — GISS · Soporte Técnico de Sistemas (18.5M€, 3 lotes) — **el real que Jaime trabaja**
 2. `2026/4521` — AGE Interior · Modernización EDR/XDR (4.5M€, 1 lote)
 3. `2026/2145` — Min. Justicia · Renovación Fortinet (3.1M€, 1 lote)
@@ -140,7 +144,7 @@ Estados: verde #00A67C (analizado), naranja #F5A623 (revisión), rojo #E24B4A (e
 5. `2026/3892` — INAP · Plataforma SOAR (2.8M€, 2 lotes)
 6. `2026/6034` — Junta Andalucía · Auditoría ENS Alto (1.8M€, 1 lote)
 
-**Análisis detallado**: solo el 2026/7008 tiene datos ricos en `MOCK_ANALYSIS`; los demás caen a él como fallback (intencional para demo). Estructura del análisis:
+**Análisis detallado**: solo el 2026/7008 tiene datos ricos en el seed; los demás tienen `analysisData: null` y muestran estado vacío en la UI (ya no hay fallback a otro expediente). Estructura del análisis del 7008:
 
 ```
 resumen        objeto, CPV, procedimiento, duración, prórrogas
@@ -187,6 +191,7 @@ tcct-pliegos/
 ├── vite.config.js              plugin-react
 ├── tailwind.config.js          extend con paleta tt-*
 ├── postcss.config.js           tailwind + autoprefixer
+├── .github/workflows/ci.yml    CI: test:coverage + build en push/PR a main/develop
 ├── .gitignore
 ├── README.md                   instrucciones de despliegue
 └── src/
@@ -246,27 +251,34 @@ npm run db:studio    # explorador visual de la BD (prisma studio)
 2. vercel.com → Add New → Project → import repo → Deploy.
 3. Añadir en Settings → Environment Variables (Production + Preview): `ANTHROPIC_API_KEY` (opcional `ANTHROPIC_MODEL`) y `DATABASE_URL` (el mismo connection string del pooler de Supabase) — sin ellas `/api/analyze` y cualquier endpoint que use Prisma fallan.
 4. URL pública en 90s tipo `tcct-pliegos-xxx.vercel.app`.
-5. Cada `git push` a `main` = redeploy automático. `postinstall: prisma generate` corre solo en cada build.
+5. Cada `git push` a `main` = redeploy automático + CI en GitHub Actions. `postinstall: prisma generate` corre solo en cada build.
+
+**CI local** (mismo gate que GitHub Actions):
+```bash
+npm run test:coverage
+npm run build
+```
 
 ---
 
 ## 10. Backlog identificado
 
 **Corto plazo (iteración de mockup)**:
-- [x] Modal de upload con drag & drop del PDF — implementado en rama `feat/upload-pdf`. Valida que sea PDF, simula progreso de extracción por pasos y al terminar abre el análisis completo de 2026/7008 (no procesa el PDF real, sigue siendo mock).
+- [x] Modal de upload con drag & drop del PDF — valida que sea PDF, llama a `/api/analyze` de verdad y navega al análisis persistido.
 - [ ] Ajustar los mock del 2026/7008 con datos más cercanos a los reales de Jaime.
 - [ ] ~~Vista de comparativa entre dos pliegos.~~ Aparcada mientras se trabaja `feat/connect-api`; retomar después.
 - [x] Histograma de importes por organismo en dashboard — barras horizontales (una por organismo, agregando `importe` si se repite), ordenadas de mayor a menor, bajo la tabla de expedientes.
 - [x] KPI "Tiempo medio de extracción" sustituida por "Importe medio" (junto a "Importe agregado"), por ser más accionable para presales.
-- [x] Edición manual de los campos de análisis — botón "Editar" por sección (no global) en cada `SectionCard` de `Analysis`, con "Guardar"/"Cancelar". Al guardar `lotes`/`perfiles`, la confianza de esas filas pasa a 100% (verificado por humano). Sin backend todavía: los cambios viven en el estado de React de `App` (`onUpdateAnalysis` actualiza `pliegos` y `selectedPliego`), sobreviven navegando dashboard↔análisis en la sesión, se pierden al recargar. No cubre añadir/quitar filas ni los campos de cabecera (`pliego.importe`, `pliego.lotes`, etc.) — posible fast-follow.
+- [x] Edición manual de los campos de análisis — botón "Editar" por sección en cada `SectionCard` de `Analysis`, con "Guardar"/"Cancelar". Al guardar `lotes`/`perfiles`, la confianza pasa a 100% (verificado por humano). Persiste vía `PATCH /api/pliegos/[id]/analysis` y `PATCH /api/pliegos/[id]` (importe de cabecera). Cubierto con tests (`src/logic.test.js`, `src/Analysis.test.jsx`).
 - [x] KPIs del dashboard reactivas — dejaron de ser strings hardcodeadas; ahora `computeDashboardKpis` (`src/logic.js`) calcula recuento, importe agregado, importe medio y confianza media a partir de `pliegos` en tiempo real. Confianza media solo promedia pliegos con `analysisData` real; si no hay ninguno, cae al 94% demo. Cubierto con tests (`src/logic.test.js`, `src/Dashboard.test.jsx`).
 - [x] Aviso de descuadre lotes↔importe — `getLotesSumMismatch` (`src/logic.js`) compara `sum(lotes[].importe)` contra `pliego.importe` y pinta un banner de aviso (no bloqueante) en la sección Lotes, tanto en lectura como en vivo mientras se edita. El "Importe total del pliego" (el del ribbon de cabecera, `pliego.importe`) ahora también es editable — se añadió como campo dentro del propio formulario de "Lotes" (no en el ribbon ni como sección aparte), porque es justo donde vive la comprobación. Al guardar, `onUpdatePliego` (nuevo, en `App`) actualiza `pliego.importe` por separado de `onUpdateAnalysis` (que actualiza `lotes`); ambos se reflejan también en la fila del Dashboard. Cubierto con tests (`src/logic.test.js`, `src/Analysis.test.jsx`).
 
 **Medio plazo (versión funcional)**:
-- [x] Conectar a la **API de Anthropic Claude** para la extracción — implementado en rama `feat/connect-api` (`api/analyze.js`, modelo configurable por `ANTHROPIC_MODEL`, PDF base64 + `messages.create()` + Structured Outputs). **Probado con un pliego real y confirmado que funciona.** Pendiente de PR/merge a `main`.
-- [x] Backend mínimo (Vercel Functions) para no exponer la API key — hecho como parte de lo anterior.
+- [x] Conectar a la **API de Anthropic Claude** para la extracción — mergeada a `main` (`api/analyze.js`, modelo configurable por `ANTHROPIC_MODEL`, PDF base64 + `messages.create()` + Structured Outputs). Probado con un pliego real.
+- [x] Backend mínimo (Vercel Functions) para no exponer la API key — hecho.
+- [x] Persistencia de análisis (Supabase/Postgres + Prisma + API REST + frontend conectado) — iniciativa "full-stack sólido" completada.
+- [x] CI con tests y cobertura como gate (GitHub Actions).
 - [ ] Exportación real a Excel (SheetJS/xlsx).
-- [ ] Persistencia de análisis (Postgres/Supabase o similar).
 - [ ] Revisar el límite de ~4.5MB de payload de las Vercel Functions si da problemas con pliegos reales grandes/escaneados (alternativa: subida directa navegador→Anthropic Files API o almacenamiento intermedio).
 
 **Largo plazo (institucionalización)**:
@@ -318,4 +330,4 @@ Los 5 bloques del flujo TCCT y los cuellos de botella identificados (por si el p
 
 ---
 
-*Última actualización: 10/07/2026 · Fase actual: iniciativa "full-stack sólido" — Fases 1 (Prisma+Supabase), 2 (API REST) y 3 (reestructura frontend + TanStack Query) completadas en la rama `re-structuring`; el frontend ya consume la BD real y las ediciones persisten tras recargar. Pendiente: Fase 4 (CI). Aparte, sigue abierto el PR de `feat/connect-api` a `main`; comparativa entre pliegos aparcada.*
+*Última actualización: 10/07/2026 · Iniciativa "full-stack sólido" completada (4 fases mergeadas a `main`). El producto extrae, persiste y edita pliegos contra Supabase con CI activo. Siguiente foco: backlog corto plazo o generador de borrador RFP (§11).*

@@ -15,7 +15,7 @@ const KpiCard = ({ label, value, delta, icon: Icon, mono }) => (
       {value}
     </div>
     {delta && (
-      <div className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: theme.success }}>
+      <div className="mt-2 flex items-center gap-1 text-[11px]" style={{ color: delta.startsWith('+') ? theme.success : theme.error }}>
         <TrendingUp size={11} strokeWidth={2} />
         {delta} vs mes anterior
       </div>

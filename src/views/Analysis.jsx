@@ -576,7 +576,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
                         <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: theme.textMuted }}>Certificaciones</div>
                         <div className="flex gap-1.5 flex-wrap">
                           {data.solvencia.tecnica.certificaciones.map(cert => (
-                            <span key={cpv} className="px-2 py-0.5 rounded text-[11px]" style={{ background: theme.accentLight, color: theme.linkDark }}>{c}</span>
+                            <span key={cert} className="px-2 py-0.5 rounded text-[11px]" style={{ background: theme.accentLight, color: theme.linkDark }}>{cert}</span>
                           ))}
                         </div>
                       </div>

@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar.jsx';
 import { UploadModal } from './components/UploadModal.jsx';
 import { Dashboard } from './views/Dashboard.jsx';
 import { Analysis } from './views/Analysis.jsx';
+import { theme } from './theme.js';
 
 // Shell de la app: navegación (dashboard ↔ análisis), estado de servidor vía TanStack
 // Query (la lista de pliegos es la única fuente de verdad) y el modal de subida. Los
@@ -54,7 +55,7 @@ export default function App() {
 
   return (
     <>
-      <div className="min-h-screen flex" style={{ background: '#FAFBFC', fontFamily: '"Inter", -apple-system, sans-serif', color: '#001B4B' }}>
+      <div className="min-h-screen flex" style={{ background: theme.page, fontFamily: '"Inter", -apple-system, sans-serif', color: theme.text }}>
         <Sidebar view={view} setView={setView} />
         <main className="flex-1 overflow-auto">
           {view === 'dashboard' && (
@@ -94,23 +95,23 @@ export default function App() {
 }
 
 const LoadingState = () => (
-  <div className="p-8 flex items-center gap-3 text-[14px]" style={{ color: '#5B6478' }}>
-    <Loader2 size={18} strokeWidth={2} color="#0066FF" className="animate-spin" />
+  <div className="p-8 flex items-center gap-3 text-[14px]" style={{ color: theme.textMuted }}>
+    <Loader2 size={18} strokeWidth={2} color={theme.link} className="animate-spin" />
     Cargando pliegos…
   </div>
 );
 
 const NotFoundState = ({ onBack }) => (
   <div className="p-8 max-w-[560px]">
-    <div className="flex items-start gap-3 p-4 rounded-md border" style={{ borderColor: '#E5E9F0', background: '#F5F7FA' }}>
-      <AlertTriangle size={18} color="#5B6478" strokeWidth={1.8} className="shrink-0 mt-0.5" />
+    <div className="flex items-start gap-3 p-4 rounded-md border" style={{ borderColor: theme.border, background: theme.muted }}>
+      <AlertTriangle size={18} color={theme.textMuted} strokeWidth={1.8} className="shrink-0 mt-0.5" />
       <div>
-        <div className="text-[13px] mb-0.5" style={{ color: '#001B4B', fontWeight: 500 }}>Pliego no encontrado</div>
-        <div className="text-[12px] mb-3" style={{ color: '#5B6478' }}>El pliego seleccionado ya no está disponible.</div>
+        <div className="text-[13px] mb-0.5" style={{ color: theme.text, fontWeight: 500 }}>Pliego no encontrado</div>
+        <div className="text-[12px] mb-3" style={{ color: theme.textMuted }}>El pliego seleccionado ya no está disponible.</div>
         <button
           onClick={onBack}
           className="px-3 py-1.5 rounded-md text-[12px]"
-          style={{ background: '#0066FF', color: 'white', fontWeight: 500 }}
+          style={{ background: theme.primary, color: theme.white, fontWeight: 500 }}
         >
           Volver al dashboard
         </button>
@@ -121,15 +122,15 @@ const NotFoundState = ({ onBack }) => (
 
 const ErrorState = ({ message, onRetry }) => (
   <div className="p-8 max-w-[560px]">
-    <div className="flex items-start gap-3 p-4 rounded-md border" style={{ borderColor: '#F5C6C6', background: '#FCEBEB' }}>
-      <AlertTriangle size={18} color="#8B1F1F" strokeWidth={1.8} className="shrink-0 mt-0.5" />
+    <div className="flex items-start gap-3 p-4 rounded-md border" style={{ borderColor: theme.errorBorder, background: theme.errorBg }}>
+      <AlertTriangle size={18} color={theme.errorText} strokeWidth={1.8} className="shrink-0 mt-0.5" />
       <div>
-        <div className="text-[13px] mb-0.5" style={{ color: '#8B1F1F', fontWeight: 500 }}>No se han podido cargar los pliegos</div>
-        <div className="text-[12px] mb-3" style={{ color: '#8B1F1F' }}>{message || 'Error de conexión con el servidor.'}</div>
+        <div className="text-[13px] mb-0.5" style={{ color: theme.errorText, fontWeight: 500 }}>No se han podido cargar los pliegos</div>
+        <div className="text-[12px] mb-3" style={{ color: theme.errorText }}>{message || 'Error de conexión con el servidor.'}</div>
         <button
           onClick={onRetry}
           className="px-3 py-1.5 rounded-md text-[12px]"
-          style={{ background: '#0066FF', color: 'white', fontWeight: 500 }}
+          style={{ background: theme.primary, color: theme.white, fontWeight: 500 }}
         >
           Reintentar
         </button>

@@ -1,6 +1,8 @@
 // Primitivas de formulario usadas en el modo edición de Analysis. Mismo estilo que
 // el modo lectura para que la edición no desentone visualmente.
-const fieldStyle = { borderColor: '#E5E9F0', color: '#001B4B' };
+import { theme } from '../theme.js';
+
+const fieldStyle = { borderColor: theme.border, color: theme.text };
 
 export const TextField = ({ value, onChange, mono = false, className = '' }) => (
   <input
@@ -44,5 +46,5 @@ export const SelectField = ({ value, onChange, options, className = '' }) => (
 );
 
 export const FieldLabel = ({ children }) => (
-  <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: '#5B6478', letterSpacing: '0.08em' }}>{children}</div>
+  <div className="text-[10px] uppercase tracking-wider mb-1.5" style={{ color: theme.textMuted, letterSpacing: '0.08em' }}>{children}</div>
 );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { listPliegos, updatePliego, updateAnalysis } from './api/pliegos.js';
@@ -40,12 +40,21 @@ export default function App() {
     return withAnalysis?.id ?? pliegos[0]?.id ?? null;
   };
 
+  const resolveSelectedId = (prev) => {
+    if (prev && pliegos.some(p => p.id === prev)) return prev;
+    return pickDefaultPliegoId();
+  };
+
+  // Si el usuario abre Análisis antes de que cargue la lista, selectedId queda null
+  // y hay que re-resolverlo cuando lleguen los pliegos.
+  useEffect(() => {
+    if (view !== 'analysis' || isLoading) return;
+    setSelectedId(resolveSelectedId);
+  }, [view, isLoading, pliegos]);
+
   const handleNavigate = (nextView) => {
-    if (nextView === 'analysis') {
-      setSelectedId(prev => {
-        if (prev && pliegos.some(p => p.id === prev)) return prev;
-        return pickDefaultPliegoId();
-      });
+    if (nextView === 'analysis' && !isLoading) {
+      setSelectedId(resolveSelectedId);
     }
     setView(nextView);
   };

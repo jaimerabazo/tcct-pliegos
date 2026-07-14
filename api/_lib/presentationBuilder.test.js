@@ -61,30 +61,69 @@ describe('buildSlideSpecs — portada', () => {
     expect(importe.mono).toBe(true);
   });
 
+  it('procedimiento y ENS en portada coinciden con Resumen ejecutivo (analysisData, no cabecera del pliego)', () => {
+    const specs = build();
+    const cover = specs[0];
+    const resumenRows = specs[1].blocks[0].rows;
+    const procedimientoCover = cover.meta.find((m) => m.label === 'Procedimiento');
+    const ensCover = cover.meta.find((m) => m.label === 'ENS');
+    const procedimientoResumen = resumenRows.find((r) => r.label === 'Procedimiento');
+    const ensResumen = resumenRows.find((r) => r.label === 'Marco ENS');
+    expect(procedimientoCover.value).toBe(procedimientoResumen.value);
+    expect(ensCover.value).toBe(ensResumen.value);
+    expect(procedimientoCover.value).toBe('Abierto sujeto a regulación armonizada (SARA)');
+    expect(ensCover.value).toBe('Nivel Alto');
+    expect(procedimientoCover.value).not.toBe(pliego.procedimiento);
+    expect(ensCover.value).not.toBe(pliego.ens);
+  });
+
   it('tagline vacío si no se proporciona', () => {
     const cover = build({ tagline: '' })[0];
     expect(cover.tagline).toBe('');
   });
 
-  it('formatea fechaLimite en corto aunque llegue como Date o ISO de Prisma', () => {
+  it('usa plazos.limite del análisis (misma fuente que Analysis y diapositiva Plazos)', () => {
+    const cover = build()[0];
+    const plazos = build()[7];
+    const cierre = cover.meta.find((m) => m.label === 'Cierre de ofertas');
+    const limitePlazos = plazos.blocks[0].rows.find((r) => r.label === 'Límite de presentación');
+    expect(cierre.value).toBe('15 de julio de 2026, 14:00');
+    expect(cierre.value).toBe(limitePlazos.value);
+  });
+
+  it('prefiere plazos.limite editado sobre pliego.fechaLimite obsoleto', () => {
+    const edited = {
+      ...analysisData,
+      plazos: { ...analysisData.plazos, limite: '20 de agosto de 2026, 12:00' },
+    };
+    const stalePliego = { ...pliego, fechaLimite: '15 jul 2026' };
+    const cierre = build({ pliego: stalePliego, analysisData: edited })[0].meta
+      .find((m) => m.label === 'Cierre de ofertas');
+    expect(cierre.value).toBe('20 de agosto de 2026, 12:00');
+  });
+
+  it('formatea fechaLimite en corto como respaldo si plazos.limite está vacío', () => {
+    const noPlazos = { ...analysisData, plazos: {} };
     const isoPliego = { ...pliego, fechaLimite: '2026-07-15T00:00:00.000Z' };
     const datePliego = { ...pliego, fechaLimite: new Date(Date.UTC(2026, 6, 15)) };
-    const cierreIso = build({ pliego: isoPliego })[0].meta.find((m) => m.label === 'Cierre de ofertas');
-    const cierreDate = build({ pliego: datePliego })[0].meta.find((m) => m.label === 'Cierre de ofertas');
+    const cierreIso = build({ pliego: isoPliego, analysisData: noPlazos })[0].meta.find((m) => m.label === 'Cierre de ofertas');
+    const cierreDate = build({ pliego: datePliego, analysisData: noPlazos })[0].meta.find((m) => m.label === 'Cierre de ofertas');
     expect(cierreIso.value).toBe('15 jul 2026');
     expect(cierreDate.value).toBe('15 jul 2026');
   });
 
-  it('formatea fechaLimite en corto cuando ya llega como string UI (Claude/seed/normalizePliego)', () => {
+  it('formatea fechaLimite en corto cuando ya llega como string UI (respaldo sin plazos.limite)', () => {
+    const noPlazos = { ...analysisData, plazos: {} };
     const shortPliego = { ...pliego, fechaLimite: '15 jul 2026' };
     const paddedPliego = { ...pliego, fechaLimite: '06 jul 2026' };
-    const cierre = build({ pliego: shortPliego })[0].meta.find((m) => m.label === 'Cierre de ofertas');
-    const cierrePadded = build({ pliego: paddedPliego })[0].meta.find((m) => m.label === 'Cierre de ofertas');
+    const cierre = build({ pliego: shortPliego, analysisData: noPlazos })[0].meta.find((m) => m.label === 'Cierre de ofertas');
+    const cierrePadded = build({ pliego: paddedPliego, analysisData: noPlazos })[0].meta.find((m) => m.label === 'Cierre de ofertas');
     expect(cierre.value).toBe('15 jul 2026');
     expect(cierrePadded.value).toBe('06 jul 2026');
   });
 
-  it('no depende de que new Date parsee el string corto (entornos sin locale español)', () => {
+  it('no depende de que new Date parsee el string corto en el respaldo (entornos sin locale español)', () => {
+    const noPlazos = { ...analysisData, plazos: {} };
     const realDate = Date;
     // Simula Node/Linux donde new Date("15 jul 2026") devuelve Invalid Date.
     global.Date = class extends realDate {
@@ -97,7 +136,7 @@ describe('buildSlideSpecs — portada', () => {
       }
     };
     try {
-      const cierre = build({ pliego: { ...pliego, fechaLimite: '15 jul 2026' } })[0].meta
+      const cierre = build({ pliego: { ...pliego, fechaLimite: '15 jul 2026' }, analysisData: noPlazos })[0].meta
         .find((m) => m.label === 'Cierre de ofertas');
       expect(cierre.value).toBe('15 jul 2026');
     } finally {

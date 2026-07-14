@@ -200,7 +200,19 @@ const SECTION_BUILDERS = {
 
 // --- Diapositivas especiales (portada y resumen final) ---
 
-function buildCoverSpec(pliego, tagline) {
+// Misma fuente que el ribbon de Analysis.jsx y la diapositiva Plazos: plazos.limite
+// (editable vía PATCH analysis). pliego.fechaLimite solo como respaldo si no hay análisis.
+function coverCierreOfertas(pliego, analysisData) {
+  const limite = analysisData?.plazos?.limite;
+  if (limite !== null && limite !== undefined && limite !== '') {
+    return orDash(limite);
+  }
+  return orDashDate(pliego.fechaLimite);
+}
+
+function buildCoverSpec(pliego, analysisData, tagline) {
+  const r = analysisData.resumen ?? {};
+  const m = analysisData.marco ?? {};
   return {
     kind: 'cover',
     title: orDash(pliego.titulo),
@@ -210,9 +222,9 @@ function buildCoverSpec(pliego, tagline) {
       { label: 'Expediente', value: orDash(pliego.expediente), mono: true },
       { label: 'Importe', value: formatEuroFull(pliego.importe), mono: true },
       { label: 'Lotes', value: String(formatNumber(pliego.lotes)) },
-      { label: 'Procedimiento', value: orDash(pliego.procedimiento) },
-      { label: 'ENS', value: orDash(pliego.ens) },
-      { label: 'Cierre de ofertas', value: orDashDate(pliego.fechaLimite) },
+      { label: 'Procedimiento', value: orDash(r.procedimiento) },
+      { label: 'ENS', value: orDash(m.ens) },
+      { label: 'Cierre de ofertas', value: coverCierreOfertas(pliego, analysisData) },
     ],
   };
 }
@@ -241,7 +253,7 @@ export function buildSlideSpecs({ pliego, analysisData, tagline = '', resumenFin
   if (!pliego) throw new Error('buildSlideSpecs: falta el pliego.');
   if (!analysisData) throw new Error('buildSlideSpecs: falta analysisData (el pliego no está analizado).');
 
-  const specs = [buildCoverSpec(pliego, tagline)];
+  const specs = [buildCoverSpec(pliego, analysisData, tagline)];
 
   SECTION_ORDER.forEach((sectionId, i) => {
     specs.push({

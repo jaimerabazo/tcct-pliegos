@@ -10,6 +10,14 @@ const CONTENT_W = LAYOUT.w - M * 2;
 const HEADER_Y = 0.55; // franja de título en diapositivas de contenido
 const BODY_TOP = 1.5; // dónde empieza el cuerpo bajo la cabecera
 const BODY_BOTTOM = LAYOUT.h - 0.55; // reserva para el pie
+const BLOCK_GAP = 0.25;
+const BLOCK_HEADING_H = 0.42;
+const TABLE_ROW_H = 0.34;
+const KV_ROW_H = 0.46;
+const BULLET_ITEM_H = 0.34;
+const PARAGRAPH_H = 0.9;
+
+const bodySpan = () => BODY_BOTTOM - BODY_TOP;
 
 // --- Portada -----------------------------------------------------------------
 
@@ -102,14 +110,151 @@ function addFooter(slide, spec) {
 
 // --- Render de bloques -------------------------------------------------------
 
-// Estimación de altura para apilar bloques verticalmente (aprox., pptxgenjs no reflowa).
+// Altura estimada alineada con las constantes de render (rowH, cursor, etc.).
 function estimateBlockHeight(block) {
-  const headH = block.heading ? 0.4 : 0;
-  if (block.type === 'table') return headH + 0.4 + block.rows.length * 0.42 + 0.2;
-  if (block.type === 'keyvalue') return headH + block.rows.length * 0.46 + 0.15;
-  if (block.type === 'bullets') return headH + block.items.length * 0.36 + 0.1;
-  if (block.type === 'paragraph') return headH + 0.9;
+  const headH = block.heading ? BLOCK_HEADING_H : 0;
+  if (block.type === 'table') return headH + (block.rows.length + 1) * TABLE_ROW_H;
+  if (block.type === 'keyvalue') return headH + block.rows.length * KV_ROW_H;
+  if (block.type === 'bullets') return headH + block.items.length * BULLET_ITEM_H;
+  if (block.type === 'paragraph') return headH + PARAGRAPH_H;
   return 0.5;
+}
+
+function splitTableBlock(block, maxHeight, showHeading = true) {
+  const headingH = showHeading && block.heading ? BLOCK_HEADING_H : 0;
+  const maxRows = Math.floor((maxHeight - headingH) / TABLE_ROW_H) - 1;
+  if (maxRows >= block.rows.length) {
+    return { chunk: block, remainder: null };
+  }
+  if (maxRows <= 0) {
+    return { chunk: null, remainder: block };
+  }
+  const chunk = {
+    ...block,
+    heading: showHeading ? block.heading : undefined,
+    rows: block.rows.slice(0, maxRows),
+  };
+  const remainder = {
+    ...block,
+    heading: undefined,
+    rows: block.rows.slice(maxRows),
+  };
+  return { chunk, remainder };
+}
+
+function splitKeyValueBlock(block, maxHeight, showHeading = true) {
+  const headingH = showHeading && block.heading ? BLOCK_HEADING_H : 0;
+  const maxRows = Math.floor((maxHeight - headingH) / KV_ROW_H);
+  if (maxRows >= block.rows.length) {
+    return { chunk: block, remainder: null };
+  }
+  if (maxRows <= 0) {
+    return { chunk: null, remainder: block };
+  }
+  const chunk = {
+    ...block,
+    heading: showHeading ? block.heading : undefined,
+    rows: block.rows.slice(0, maxRows),
+  };
+  const remainder = {
+    ...block,
+    heading: undefined,
+    rows: block.rows.slice(maxRows),
+  };
+  return { chunk, remainder };
+}
+
+function splitBulletsBlock(block, maxHeight, showHeading = true) {
+  const headingH = showHeading && block.heading ? BLOCK_HEADING_H : 0;
+  const maxItems = Math.floor((maxHeight - headingH) / BULLET_ITEM_H);
+  if (maxItems >= block.items.length) {
+    return { chunk: block, remainder: null };
+  }
+  if (maxItems <= 0) {
+    return { chunk: null, remainder: block };
+  }
+  const chunk = {
+    ...block,
+    heading: showHeading ? block.heading : undefined,
+    items: block.items.slice(0, maxItems),
+  };
+  const remainder = {
+    ...block,
+    heading: undefined,
+    items: block.items.slice(maxItems),
+  };
+  return { chunk, remainder };
+}
+
+function splitBlockForHeight(block, maxHeight, showHeading = true) {
+  if (block.type === 'table') return splitTableBlock(block, maxHeight, showHeading);
+  if (block.type === 'keyvalue') return splitKeyValueBlock(block, maxHeight, showHeading);
+  if (block.type === 'bullets') return splitBulletsBlock(block, maxHeight, showHeading);
+  return { chunk: block, remainder: null };
+}
+
+// Reparte bloques en páginas que respetan BODY_BOTTOM. Las tablas (y listas largas)
+// se trocean por filas/ítems y continúan en diapositivas "(cont.)" si hace falta.
+function paginateBlocks(blocks) {
+  const pages = [];
+  let queue = blocks.map((block) => ({ block, showHeading: true }));
+
+  while (queue.length > 0) {
+    const page = [];
+    let cursor = BODY_TOP;
+
+    while (queue.length > 0) {
+      const { block, showHeading } = queue[0];
+      const blockH = estimateBlockHeight({
+        ...block,
+        heading: showHeading ? block.heading : undefined,
+      });
+      const available = BODY_BOTTOM - cursor;
+
+      if (blockH <= available) {
+        page.push({ block, showHeading });
+        queue.shift();
+        cursor += blockH + BLOCK_GAP;
+        continue;
+      }
+
+      const { chunk, remainder } = splitBlockForHeight(block, available, showHeading);
+      if (chunk) {
+        page.push({ block: chunk, showHeading });
+        if (remainder) {
+          queue[0] = { block: remainder, showHeading: false };
+        } else {
+          queue.shift();
+        }
+        break;
+      }
+
+      if (page.length > 0) break;
+
+      const { chunk: forced, remainder: forcedRemainder } = splitBlockForHeight(
+        block,
+        bodySpan(),
+        showHeading,
+      );
+      if (forced) {
+        page.push({ block: forced, showHeading });
+        if (forcedRemainder) {
+          queue[0] = { block: forcedRemainder, showHeading: false };
+        } else {
+          queue.shift();
+        }
+        break;
+      }
+
+      page.push({ block, showHeading });
+      queue.shift();
+      break;
+    }
+
+    pages.push(page);
+  }
+
+  return pages.length ? pages : [[]];
 }
 
 function renderTableBlock(pptx, slide, block, y) {
@@ -130,7 +275,7 @@ function renderTableBlock(pptx, slide, block, y) {
   slide.addTable(rows, {
     x: M, y, w: CONTENT_W,
     border: { type: 'solid', color: PPT.border, pt: 1 },
-    align: 'left', valign: 'middle', autoPage: false, rowH: 0.34,
+    align: 'left', valign: 'middle', autoPage: false, rowH: TABLE_ROW_H,
   });
 }
 
@@ -198,16 +343,9 @@ function renderBlock(pptx, slide, block, y) {
 }
 
 function renderContentSlide(pptx, spec) {
-  const slide = pptx.addSlide();
-  addContentHeader(pptx, slide, spec);
-
-  // Distribuye los bloques verticalmente. Si el contenido cabe holgado, lo centramos un
-  // poco; si no, arranca en BODY_TOP y se apila (aprox.).
-  const totalH = spec.blocks.reduce((acc, b) => acc + estimateBlockHeight(b) + 0.25, 0);
-  const available = BODY_BOTTOM - BODY_TOP;
-  let cursor = BODY_TOP + (totalH < available ? Math.min(0.3, (available - totalH) / 2) : 0);
-
   if (spec.blocks.length === 0) {
+    const slide = pptx.addSlide();
+    addContentHeader(pptx, slide, spec);
     const emptyMessage = spec.kind === 'final'
       ? 'Sin conclusiones ni recomendación generadas.'
       : 'Sin datos para esta sección.';
@@ -215,14 +353,32 @@ function renderContentSlide(pptx, spec) {
       x: M, y: BODY_TOP + 0.3, w: CONTENT_W, h: 0.5,
       fontFace: FONT.body, fontSize: 13, color: PPT.gray, italic: true,
     });
+    addFooter(slide, spec);
+    return;
   }
 
-  spec.blocks.forEach((block) => {
-    renderBlock(pptx, slide, block, cursor);
-    cursor += estimateBlockHeight(block) + 0.25;
-  });
+  const pages = paginateBlocks(spec.blocks);
+  const totalH = spec.blocks.reduce((acc, b) => acc + estimateBlockHeight(b) + BLOCK_GAP, 0) - BLOCK_GAP;
+  const centerOffset = pages.length === 1 && totalH < bodySpan()
+    ? Math.min(0.3, (bodySpan() - totalH) / 2)
+    : 0;
 
-  addFooter(slide, spec);
+  pages.forEach((pageBlocks, pageIndex) => {
+    const slide = pptx.addSlide();
+    const slideSpec = pageIndex > 0
+      ? { ...spec, title: `${spec.title} (cont.)` }
+      : spec;
+    addContentHeader(pptx, slide, slideSpec);
+
+    let cursor = BODY_TOP + (pageIndex === 0 ? centerOffset : 0);
+    pageBlocks.forEach(({ block, showHeading }) => {
+      const renderable = showHeading ? block : { ...block, heading: undefined };
+      renderBlock(pptx, slide, renderable, cursor);
+      cursor += estimateBlockHeight(renderable) + BLOCK_GAP;
+    });
+
+    addFooter(slide, spec);
+  });
 }
 
 // --- Punto de entrada --------------------------------------------------------
@@ -242,3 +398,5 @@ export async function renderPptx(specs, { expediente } = {}) {
 
   return pptx.write({ outputType: 'nodebuffer' });
 }
+
+export { estimateBlockHeight, paginateBlocks };

@@ -1,9 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { estimateBlockHeight, paginateBlocks } from './presentationRenderer.js';
+import {
+  estimateBlockHeight,
+  estimateParagraphTextHeight,
+  paginateBlocks,
+} from './presentationRenderer.js';
 
 const BODY_TOP = 1.5;
 const BODY_BOTTOM = 7.5 - 0.55;
 const BLOCK_GAP = 0.25;
+const PARAGRAPH_LINE_H = (12 * 1.2) / 72;
 
 function pageContentHeight(pageBlocks) {
   return pageBlocks.reduce((acc, { block, showHeading }, i) => {
@@ -16,6 +21,19 @@ function pageContentHeight(pageBlocks) {
 function fitsOnPage(pageBlocks) {
   return BODY_TOP + pageContentHeight(pageBlocks) <= BODY_BOTTOM;
 }
+
+describe('estimateParagraphTextHeight', () => {
+  it('grows with wrapped line count instead of using a fixed box', () => {
+    const short = estimateParagraphTextHeight('Una frase corta.');
+    const long = estimateParagraphTextHeight(
+      'Posicionamiento recomendado. '.repeat(80),
+    );
+
+    expect(short).toBe(PARAGRAPH_LINE_H);
+    expect(long).toBeGreaterThan(short);
+    expect(long).toBeGreaterThan(0.9);
+  });
+});
 
 describe('paginateBlocks — non-splittable blocks', () => {
   it('moves a paragraph to the next page when it does not fit below the footer line', () => {
@@ -51,6 +69,35 @@ describe('paginateBlocks — non-splittable blocks', () => {
     expect(pages[0]).toHaveLength(2);
     expect(fitsOnPage(pages[0])).toBe(true);
   });
+
+  it('does not underestimate long recomendacion when paginating after a keyvalue block', () => {
+    const kv = {
+      type: 'keyvalue',
+      heading: 'Section',
+      rows: Array(6).fill(null).map((_, i) => ({ label: `L${i}`, value: 'v' })),
+    };
+    const longRecomendacion = {
+      type: 'paragraph',
+      heading: 'Recomendación',
+      text: 'Posicionar a TCCT como partner integral con foco en continuidad operativa. '.repeat(40),
+    };
+
+    const kvH = estimateBlockHeight(kv);
+    const oldParaH = 0.42 + 0.9;
+    expect(BODY_TOP + kvH + BLOCK_GAP + oldParaH).toBeLessThanOrEqual(BODY_BOTTOM);
+
+    const pages = paginateBlocks([kv, longRecomendacion]);
+
+    pages.forEach((page) => expect(fitsOnPage(page)).toBe(true));
+    expect(estimateBlockHeight(longRecomendacion)).toBeGreaterThan(oldParaH);
+
+    const renderedText = pages
+      .flatMap((page) => page.filter(({ block }) => block.type === 'paragraph').map(({ block }) => block.text))
+      .join(' ');
+    expect(renderedText.replace(/\s+/g, ' ').trim()).toBe(
+      longRecomendacion.text.replace(/\s+/g, ' ').trim(),
+    );
+  });
 });
 
 describe('paginateBlocks — splittable blocks', () => {
@@ -71,5 +118,25 @@ describe('paginateBlocks — splittable blocks', () => {
       0,
     );
     expect(rowCount).toBe(20);
+  });
+
+  it('splits very long paragraphs across continuation pages', () => {
+    const paragraph = {
+      type: 'paragraph',
+      heading: 'Recomendación',
+      text: 'Posicionamiento recomendado para TCCT. '.repeat(120),
+    };
+
+    const pages = paginateBlocks([paragraph]);
+
+    expect(pages.length).toBeGreaterThan(1);
+    pages.forEach((page) => expect(fitsOnPage(page)).toBe(true));
+
+    const renderedText = pages
+      .flatMap((page) => page.map(({ block }) => block.text))
+      .join(' ');
+    expect(renderedText.replace(/\s+/g, ' ').trim()).toBe(
+      paragraph.text.replace(/\s+/g, ' ').trim(),
+    );
   });
 });

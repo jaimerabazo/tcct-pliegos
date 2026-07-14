@@ -5,6 +5,7 @@ import {
   formatEuro,
   formatEuroFull,
   formatShortDate,
+  parseShortDate,
   slugify,
   listToText,
   textToList,
@@ -90,6 +91,36 @@ describe('formatShortDate', () => {
 
   it('no retrocede un día en husos al oeste de UTC (fechaLimite a medianoche Z)', () => {
     expect(formatShortDate(new Date('2026-07-15T00:00:00.000Z'))).toBe('15 jul 2026');
+  });
+});
+
+describe('parseShortDate', () => {
+  it('convierte "DD mes AAAA" en un Date en medianoche UTC', () => {
+    const d = parseShortDate('15 jul 2026');
+    expect(d.getUTCFullYear()).toBe(2026);
+    expect(d.getUTCMonth()).toBe(6); // julio = 6 (0-indexed)
+    expect(d.getUTCDate()).toBe(15);
+    // Independiente del huso horario: siempre medianoche UTC, no el día anterior.
+    expect(d.toISOString()).toBe('2026-07-15T00:00:00.000Z');
+  });
+
+  it('devuelve null para "No especificado" (lo que Claude emite sin fecha)', () => {
+    // No debe producir un Invalid Date: reventaría el upsert de Prisma con un 502.
+    expect(parseShortDate('No especificado')).toBeNull();
+  });
+
+  it('devuelve null para strings que no encajan con "DD mes AAAA"', () => {
+    expect(parseShortDate('')).toBeNull();
+    expect(parseShortDate(null)).toBeNull();
+    expect(parseShortDate(undefined)).toBeNull();
+    expect(parseShortDate('15 xxx 2026')).toBeNull(); // mes desconocido
+    expect(parseShortDate('quince jul 2026')).toBeNull(); // día no numérico
+    expect(parseShortDate('15 jul añoquesea')).toBeNull(); // año no numérico
+  });
+
+  it('es inverso de formatShortDate para fechas válidas', () => {
+    const d = parseShortDate('06 jul 2026');
+    expect(formatShortDate(d)).toBe('06 jul 2026');
   });
 });
 

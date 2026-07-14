@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from './_lib/prisma.js';
 import { pliegoFromAnalysisSchema, analysisDataSchema } from './_lib/schemas.js';
-import { parseShortDate } from '../prisma/seed.js';
+import { parseShortDate } from '../src/logic.js';
 
 export const config = {
   maxDuration: 300,

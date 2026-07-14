@@ -15,9 +15,66 @@ const BLOCK_HEADING_H = 0.42;
 const TABLE_ROW_H = 0.34;
 const KV_ROW_H = 0.46;
 const BULLET_ITEM_H = 0.34;
-const PARAGRAPH_H = 0.9;
+const PARAGRAPH_FONT_SIZE = 12;
+const PARAGRAPH_LINE_SPACING = 1.2;
+const PARAGRAPH_LINE_H = (PARAGRAPH_FONT_SIZE * PARAGRAPH_LINE_SPACING) / 72;
+const PARAGRAPH_MIN_H = PARAGRAPH_LINE_H;
 
 const bodySpan = () => BODY_BOTTOM - BODY_TOP;
+
+// Heurística compartida entre paginación y render: ancho medio de carácter en Calibri 12.
+function charsPerLine(widthInches = CONTENT_W, fontSize = PARAGRAPH_FONT_SIZE) {
+  const avgCharWidthPt = fontSize * 0.5;
+  return Math.max(1, Math.floor((widthInches * 72) / avgCharWidthPt));
+}
+
+function wrapTextToLines(text, maxCharsPerLine) {
+  const lines = [];
+  for (const paragraph of String(text ?? '').split(/\r?\n/)) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      lines.push('');
+      continue;
+    }
+    let current = '';
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length <= maxCharsPerLine) {
+        current = candidate;
+        continue;
+      }
+      if (current) lines.push(current);
+      if (word.length > maxCharsPerLine) {
+        let rest = word;
+        while (rest.length > maxCharsPerLine) {
+          lines.push(rest.slice(0, maxCharsPerLine));
+          rest = rest.slice(maxCharsPerLine);
+        }
+        current = rest;
+      } else {
+        current = word;
+      }
+    }
+    if (current) lines.push(current);
+  }
+  return lines.length ? lines : [''];
+}
+
+function estimateParagraphTextHeight(text) {
+  const lineCount = wrapTextToLines(text, charsPerLine()).length;
+  return Math.max(PARAGRAPH_MIN_H, lineCount * PARAGRAPH_LINE_H);
+}
+
+function splitParagraphText(text, maxLines) {
+  const lines = wrapTextToLines(text, charsPerLine());
+  if (lines.length <= maxLines) {
+    return { chunkText: String(text ?? ''), remainderText: null };
+  }
+  return {
+    chunkText: lines.slice(0, maxLines).join(' '),
+    remainderText: lines.slice(maxLines).join(' '),
+  };
+}
 
 // --- Portada -----------------------------------------------------------------
 
@@ -116,8 +173,34 @@ function estimateBlockHeight(block) {
   if (block.type === 'table') return headH + (block.rows.length + 1) * TABLE_ROW_H;
   if (block.type === 'keyvalue') return headH + block.rows.length * KV_ROW_H;
   if (block.type === 'bullets') return headH + block.items.length * BULLET_ITEM_H;
-  if (block.type === 'paragraph') return headH + PARAGRAPH_H;
+  if (block.type === 'paragraph') return headH + estimateParagraphTextHeight(block.text);
   return 0.5;
+}
+
+function splitParagraphBlock(block, maxHeight, showHeading = true) {
+  const headingH = showHeading && block.heading ? BLOCK_HEADING_H : 0;
+  const availableForText = maxHeight - headingH;
+  if (availableForText <= 0) {
+    return { chunk: null, remainder: block };
+  }
+  const fullTextH = estimateParagraphTextHeight(block.text);
+  if (headingH + fullTextH <= maxHeight) {
+    return { chunk: block, remainder: null };
+  }
+  const maxLines = Math.floor(availableForText / PARAGRAPH_LINE_H);
+  if (maxLines <= 0) {
+    return { chunk: null, remainder: block };
+  }
+  const { chunkText, remainderText } = splitParagraphText(block.text, maxLines);
+  const chunk = {
+    ...block,
+    heading: showHeading ? block.heading : undefined,
+    text: chunkText,
+  };
+  const remainder = remainderText
+    ? { ...block, heading: undefined, text: remainderText }
+    : null;
+  return { chunk, remainder };
 }
 
 function splitTableBlock(block, maxHeight, showHeading = true) {
@@ -190,6 +273,7 @@ function splitBlockForHeight(block, maxHeight, showHeading = true) {
   if (block.type === 'table') return splitTableBlock(block, maxHeight, showHeading);
   if (block.type === 'keyvalue') return splitKeyValueBlock(block, maxHeight, showHeading);
   if (block.type === 'bullets') return splitBulletsBlock(block, maxHeight, showHeading);
+  if (block.type === 'paragraph') return splitParagraphBlock(block, maxHeight, showHeading);
   const blockH = estimateBlockHeight({
     ...block,
     heading: showHeading ? block.heading : undefined,
@@ -336,9 +420,11 @@ function renderParagraphBlock(pptx, slide, block, y) {
     });
     cursor += 0.42;
   }
+  const textH = estimateParagraphTextHeight(block.text);
   slide.addText(block.text, {
-    x: M, y: cursor, w: CONTENT_W, h: 0.9,
-    fontFace: FONT.body, fontSize: 12, color: PPT.navy, valign: 'top', lineSpacingMultiple: 1.2,
+    x: M, y: cursor, w: CONTENT_W, h: textH,
+    fontFace: FONT.body, fontSize: PARAGRAPH_FONT_SIZE, color: PPT.navy,
+    valign: 'top', lineSpacingMultiple: PARAGRAPH_LINE_SPACING,
   });
 }
 
@@ -406,4 +492,4 @@ export async function renderPptx(specs, { expediente } = {}) {
   return pptx.write({ outputType: 'nodebuffer' });
 }
 
-export { estimateBlockHeight, paginateBlocks };
+export { estimateBlockHeight, estimateParagraphTextHeight, paginateBlocks };

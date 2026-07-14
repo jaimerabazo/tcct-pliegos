@@ -43,9 +43,29 @@ export const formatEuroFull = (n) => (isBlankNumber(n) ? '—' : new Intl.Number
 }).format(n));
 
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MESES_INDEX = Object.fromEntries(MESES_CORTOS.map((m, i) => [m, i]));
+
 // Fechas de pliego (fechaLimite, etc.) se persisten ancladas a medianoche UTC (parseShortDate / Prisma).
 // Usar getUTC* evita mostrar el día natural anterior en husos al oeste de UTC.
 export const formatShortDate = (d) => `${String(d.getUTCDate()).padStart(2, '0')} ${MESES_CORTOS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+
+export function parseShortDate(str) {
+  const [day, mes, year] = (str ?? '').split(' ');
+  const month = MESES_INDEX[mes];
+  const d = Number(day);
+  const y = Number(year);
+  // "No especificado" (lo que Claude emite cuando el pliego no da fecha) y cualquier
+  // otro string que no encaje con "DD mes AAAA" no es una fecha: devolvemos null
+  // (fechaLimite es nullable) en vez de un Invalid Date, que reventaría el upsert de
+  // Prisma y saldría como un 502 genérico.
+  if (month === undefined || !Number.isInteger(d) || !Number.isInteger(y)) {
+    return null;
+  }
+  // Anclar a medianoche UTC (no local): al persistir el Date se normaliza a UTC,
+  // y una medianoche local en un huso adelantado (p.ej. Madrid UTC+2) se guardaría
+  // como las 22:00Z del día anterior, mostrándose como el día natural previo.
+  return new Date(Date.UTC(y, month, d));
+}
 
 export const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 

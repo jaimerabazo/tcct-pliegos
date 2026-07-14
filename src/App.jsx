@@ -41,7 +41,7 @@ export default function App() {
   };
 
   const resolveSelectedId = (prev) => {
-    if (prev && pliegos.some(p => p.id === prev)) return prev;
+    if (prev) return prev;
     return pickDefaultPliegoId();
   };
 

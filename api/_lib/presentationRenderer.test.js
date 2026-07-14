@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   estimateBlockHeight,
+  estimateKeyValueRowHeights,
   estimateParagraphTextHeight,
   estimateTableRowHeights,
   paginateBlocks,
@@ -10,6 +11,7 @@ const BODY_TOP = 1.5;
 const BODY_BOTTOM = 7.5 - 0.55;
 const BLOCK_GAP = 0.25;
 const TABLE_ROW_H = 0.34;
+const KV_ROW_H = 0.46;
 const PARAGRAPH_LINE_H = (12 * 1.2) / 72;
 
 function pageContentHeight(pageBlocks) {
@@ -87,6 +89,84 @@ describe('estimateBlockHeight — tables', () => {
 
     const rowCount = pages.reduce(
       (acc, page) => acc + page[0].block.rows.length,
+      0,
+    );
+    expect(rowCount).toBe(8);
+  });
+});
+
+describe('estimateBlockHeight — keyvalue', () => {
+  it('grows keyvalue height when Objeto or Normativa values wrap beyond one row', () => {
+    const shortKv = {
+      type: 'keyvalue',
+      rows: [
+        { label: 'Objeto', value: 'Contrato corto.' },
+        { label: 'Normativa', value: 'RGPD' },
+      ],
+    };
+    const longKv = {
+      type: 'keyvalue',
+      rows: [
+        {
+          label: 'Objeto',
+          value: 'Prestación de servicios de soporte técnico de sistemas para la Gerencia de Informática de la Seguridad Social, incluyendo servicios gestionados y equipos de trabajo STS distribuidos en tres áreas de actuación. '.repeat(3),
+        },
+        {
+          label: 'Normativa',
+          value: 'RGPD, LOPDGDD, Real Decreto 311/2022, ENS Alto, CCN-STIC 803, CCN-STIC 804, CCN-STIC 810 y CCN-STIC 811 con requisitos adicionales de trazabilidad y continuidad. '.repeat(4),
+        },
+      ],
+    };
+
+    const fixedH = longKv.rows.length * KV_ROW_H;
+    const shortH = estimateBlockHeight(shortKv);
+    const longH = estimateBlockHeight(longKv);
+
+    expect(shortH).toBeGreaterThanOrEqual(fixedH / 2);
+    expect(longH).toBeGreaterThan(fixedH);
+    expect(estimateKeyValueRowHeights(longKv)[0]).toBeGreaterThan(KV_ROW_H);
+    expect(estimateKeyValueRowHeights(longKv)[1]).toBeGreaterThan(KV_ROW_H);
+  });
+
+  it('paginates resumen-style keyvalue before following blocks overlap', () => {
+    const resumen = {
+      type: 'keyvalue',
+      rows: [
+        {
+          label: 'Objeto',
+          value: 'Prestación de servicios de soporte técnico de sistemas para la Gerencia de Informática de la Seguridad Social, incluyendo servicios gestionados y equipos de trabajo STS distribuidos en tres áreas de actuación. '.repeat(4),
+        },
+        { label: 'Procedimiento', value: 'Abierto sujeto a regulación armonizada (SARA)' },
+        { label: 'Duración', value: '48 meses' },
+        { label: 'Prórrogas', value: '2 prórrogas de 12 meses' },
+        { label: 'CPV', value: '72222300-0, 72514300-4, 72220000-3', mono: true },
+        { label: 'Marco ENS', value: 'Alto' },
+        { label: 'CCN-STIC', value: '803, 804, 810, 811' },
+        {
+          label: 'Normativa',
+          value: 'RGPD, LOPDGDD, Real Decreto 311/2022, ENS Alto, CCN-STIC 803, CCN-STIC 804, CCN-STIC 810 y CCN-STIC 811 con requisitos adicionales de trazabilidad y continuidad. '.repeat(3),
+        },
+      ],
+    };
+    const bullets = {
+      type: 'bullets',
+      heading: 'Hitos del contrato',
+      items: ['Kickoff', 'Fin de transición', 'Revisión SLA'],
+    };
+
+    const oldEstimate = resumen.rows.length * KV_ROW_H;
+    expect(BODY_TOP + oldEstimate + BLOCK_GAP + 0.5).toBeLessThanOrEqual(BODY_BOTTOM);
+
+    const pages = paginateBlocks([resumen, bullets]);
+
+    pages.forEach((page) => expect(fitsOnPage(page)).toBe(true));
+    expect(estimateBlockHeight(resumen)).toBeGreaterThan(oldEstimate);
+    expect(pages.length).toBeGreaterThan(1);
+
+    const rowCount = pages.reduce(
+      (acc, page) => acc + page
+        .filter(({ block }) => block.type === 'keyvalue')
+        .reduce((sum, { block }) => sum + block.rows.length, 0),
       0,
     );
     expect(rowCount).toBe(8);

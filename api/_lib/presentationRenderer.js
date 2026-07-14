@@ -18,7 +18,12 @@ const TABLE_HEADER_FONT_SIZE = 11;
 const TABLE_LINE_SPACING = 1.2;
 const TABLE_LINE_H = (TABLE_FONT_SIZE * TABLE_LINE_SPACING) / 72;
 const TABLE_CELL_PAD = TABLE_ROW_H - TABLE_LINE_H;
-const KV_ROW_H = 0.46;
+const KV_FONT_SIZE = 11;
+const KV_LINE_SPACING = 1.15;
+const KV_LABEL_W = 2.6;
+const KV_VALUE_GAP = 0.2;
+const KV_ROW_MIN_H = 0.42;
+const KV_ROW_GAP = 0.04;
 const BULLET_ITEM_H = 0.34;
 const PARAGRAPH_FONT_SIZE = 12;
 const PARAGRAPH_LINE_SPACING = 1.2;
@@ -28,9 +33,36 @@ const PARAGRAPH_MIN_H = PARAGRAPH_LINE_H;
 const bodySpan = () => BODY_BOTTOM - BODY_TOP;
 
 // Heurística compartida entre paginación y render: ancho medio de carácter en Calibri 12.
-function charsPerLine(widthInches = CONTENT_W, fontSize = PARAGRAPH_FONT_SIZE) {
-  const avgCharWidthPt = fontSize * 0.5;
+function charsPerLine(widthInches = CONTENT_W, fontSize = PARAGRAPH_FONT_SIZE, mono = false) {
+  const avgCharWidthPt = fontSize * (mono ? 0.6 : 0.5);
   return Math.max(1, Math.floor((widthInches * 72) / avgCharWidthPt));
+}
+
+function keyValueWidths() {
+  const valueW = CONTENT_W - KV_LABEL_W - KV_VALUE_GAP;
+  return { labelW: KV_LABEL_W, valueW };
+}
+
+function estimateKeyValueTextHeight(text, width, { mono = false, fontSize = KV_FONT_SIZE } = {}) {
+  const lineCount = wrapTextToLines(text, charsPerLine(width, fontSize, mono)).length;
+  const lineH = (fontSize * KV_LINE_SPACING) / 72;
+  return Math.max(KV_ROW_MIN_H, lineCount * lineH);
+}
+
+function estimateKeyValueRowHeight(row) {
+  const { labelW, valueW } = keyValueWidths();
+  const labelH = estimateKeyValueTextHeight(row.label, labelW);
+  const valueH = estimateKeyValueTextHeight(row.value, valueW, { mono: row.mono });
+  return Math.max(labelH, valueH) + KV_ROW_GAP;
+}
+
+function estimateKeyValueRowHeights(block) {
+  return block.rows.map(estimateKeyValueRowHeight);
+}
+
+function estimateKeyValueBlockHeight(block) {
+  const headH = block.heading ? BLOCK_HEADING_H : 0;
+  return headH + estimateKeyValueRowHeights(block).reduce((acc, h) => acc + h, 0);
 }
 
 function wrapTextToLines(text, maxCharsPerLine) {
@@ -206,7 +238,7 @@ function addFooter(slide, spec) {
 function estimateBlockHeight(block) {
   const headH = block.heading ? BLOCK_HEADING_H : 0;
   if (block.type === 'table') return estimateTableBlockHeight(block);
-  if (block.type === 'keyvalue') return headH + block.rows.length * KV_ROW_H;
+  if (block.type === 'keyvalue') return estimateKeyValueBlockHeight(block);
   if (block.type === 'bullets') return headH + block.items.length * BULLET_ITEM_H;
   if (block.type === 'paragraph') return headH + estimateParagraphTextHeight(block.text);
   return 0.5;
@@ -270,7 +302,15 @@ function splitTableBlock(block, maxHeight, showHeading = true) {
 
 function splitKeyValueBlock(block, maxHeight, showHeading = true) {
   const headingH = showHeading && block.heading ? BLOCK_HEADING_H : 0;
-  const maxRows = Math.floor((maxHeight - headingH) / KV_ROW_H);
+  const rowHs = estimateKeyValueRowHeights(block);
+  let used = headingH;
+  let maxRows = 0;
+  for (let i = 0; i < block.rows.length; i++) {
+    const next = used + rowHs[i];
+    if (next > maxHeight) break;
+    used = next;
+    maxRows += 1;
+  }
   if (maxRows >= block.rows.length) {
     return { chunk: block, remainder: null };
   }
@@ -421,19 +461,23 @@ function renderKeyValueBlock(pptx, slide, block, y) {
       x: M, y: cursor, w: CONTENT_W, h: 0.35,
       fontFace: FONT.display, fontSize: 14, color: PPT.blue, bold: true,
     });
-    cursor += 0.42;
+    cursor += BLOCK_HEADING_H;
   }
-  const labelW = 2.6;
-  block.rows.forEach((r) => {
+  const { labelW, valueW } = keyValueWidths();
+  const rowHs = estimateKeyValueRowHeights(block);
+  block.rows.forEach((r, i) => {
+    const rowH = rowHs[i] - KV_ROW_GAP;
     slide.addText(r.label, {
-      x: M, y: cursor, w: labelW, h: 0.42,
-      fontFace: FONT.body, fontSize: 11, color: PPT.gray, bold: true, valign: 'top',
+      x: M, y: cursor, w: labelW, h: rowH,
+      fontFace: FONT.body, fontSize: KV_FONT_SIZE, color: PPT.gray, bold: true, valign: 'top',
+      lineSpacingMultiple: KV_LINE_SPACING,
     });
     slide.addText(r.value, {
-      x: M + labelW + 0.2, y: cursor, w: CONTENT_W - labelW - 0.2, h: 0.42,
-      fontFace: r.mono ? FONT.mono : FONT.body, fontSize: 11, color: PPT.navy, valign: 'top',
+      x: M + labelW + KV_VALUE_GAP, y: cursor, w: valueW, h: rowH,
+      fontFace: r.mono ? FONT.mono : FONT.body, fontSize: KV_FONT_SIZE, color: PPT.navy, valign: 'top',
+      lineSpacingMultiple: KV_LINE_SPACING,
     });
-    cursor += 0.46;
+    cursor += rowHs[i];
   });
 }
 
@@ -538,6 +582,7 @@ export async function renderPptx(specs, { expediente } = {}) {
 
 export {
   estimateBlockHeight,
+  estimateKeyValueRowHeights,
   estimateParagraphTextHeight,
   estimateTableRowHeights,
   paginateBlocks,

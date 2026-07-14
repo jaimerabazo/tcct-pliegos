@@ -40,10 +40,11 @@
 | **TanStack Query para el estado de servidor en frontend** | Evita reinventar cache/loading/error a mano según crece la app; sustituye a los `useState`+handlers dispersos de hoy. |
 | **`analysisData` como columna JSON, sin normalizar en tablas** | Minimiza la reescritura del shape que ya consume `Analysis`; se normaliza más adelante solo si hace falta analítica cruzada entre pliegos. |
 | **CI con GitHub Actions** | Convierte el umbral de cobertura ≥90% en un gate real en push/PR a `main`/`develop`, no una norma verbal. |
+| **Paleta centralizada en `src/theme.js` + rebrand visual** | Los hex sueltos por componente se centralizan en un objeto JS único. De paso se sustituye la paleta TT corporativa original (azul #0066FF, sidebar clara) por una paleta más oscura (sidebar #111827, azul #2563EB) — el propio `theme.js` la etiqueta como "diseño Claude Design (jul 2026)". Pendiente de validar con JC si esto reemplaza definitivamente la decisión de "Estilo Telefónica Tech corporativo" de la fila de arriba. |
 
 ---
 
-## 4. Estado actual (10/07/2026)
+## 4. Estado actual (14/07/2026)
 
 **Entregado**:
 - Repo `tcct-pliegos` en GitHub (`jaimerabazo/tcct-pliegos`), con `main` desplegado en Vercel.
@@ -72,6 +73,13 @@
   - `.github/workflows/ci.yml`: en cada push/PR a `main`/`develop`, corre `npm ci`, `npm run test:coverage`, `npm run build`. No necesita `DATABASE_URL` en CI (`prisma generate` solo lee el schema; los tests usan el doble en memoria).
   - `coverage.include` en `vitest.config.js` ya cubre `src/logic.js`, `src/api/pliegos.js`, `api/_lib/schemas.js` y los 3 handlers de `api/pliegos/*`.
   - **133 tests**, 100% cobertura en todo lo incluido (umbral ≥90% configurado en `vitest.config.js`).
+
+**Retoque visual — PR #13 `fix/retoques-front`** (mergeado 13/07/2026, sin issue de tests/CI, solo estilo):
+- Se introduce `src/theme.js`: objeto único con todos los tokens de color (antes hex sueltos repetidos por componente). Importado desde `App.jsx`, `Sidebar.jsx`, `StatusBadge.jsx`, `UploadModal.jsx`, `section.jsx`, `fields.jsx`, `Analysis.jsx` y `Dashboard.jsx`.
+- De paso cambia la paleta visual (ver §6 para los valores nuevos) y el `Sidebar` pasa de fondo claro a fondo oscuro (#111827) — ver §3 para la decisión y la pregunta abierta de si sustituye al "Estilo Telefónica Tech corporativo".
+- `tailwind.config.js` (bloque `tt.*`) actualizado en paralelo para que las clases de utilidad (`bg-tt-blue`, etc.) coincidan con `theme.js`; son dos fuentes de verdad que hay que mantener sincronizadas a mano.
+- Dos fixes menores incluidos: badge de certificaciones en `Analysis.jsx` usaba una variable `key={cpv}`/`{c}` equivocada (mostraba vacío/rompía key), corregido a `key={cert}`/`{cert}`; el delta del `KpiCard` en `Dashboard.jsx` pintaba siempre en verde, ahora es rojo si empieza por "-".
+- No se han tocado tests para este PR — cambio puramente visual, sin lógica nueva que cubrir.
 
 **Pendiente inmediato**: backlog corto plazo (vista de comparativa, ajustar mocks del seed, exportación Excel). Siguiente caso de uso prioritario: generador de borrador RFP (§11).
 
@@ -106,18 +114,22 @@ Vitest 4         test runner (+ @testing-library/react, jsdom)
 
 ## 6. Diseño y branding
 
-**Paleta** (única, sin acentos secundarios):
+**Fuente de verdad de la paleta**: `src/theme.js` (objeto JS con todos los tokens, importado por los componentes). `tailwind.config.js` (bloque `tt.*`) replica los mismos valores para las clases de utilidad — son dos sitios que hay que mantener sincronizados a mano si se vuelve a tocar la paleta.
+
+**Paleta actual** (desde PR #13, 13/07/2026 — ver §3/§4, sustituye a la paleta TT corporativa original):
 ```
---tt-blue          #0066FF   Protagonista, CTAs, badges principales
---tt-blue-dark     #0044CC   Hover / active
---tt-blue-light    #F0F5FF   Fondos suaves de acento
---tt-navy          #001B4B   Texto principal, avatares
---tt-gray          #5B6478   Texto secundario, iconos inactivos
---tt-border        #E5E9F0   Bordes de tarjetas y tablas
---tt-surface       #F5F7FA   Fondos de sidebar y áreas neutras
+tt-blue / theme.link      #2563EB   Protagonista, CTAs, badges principales
+tt-blue-dark               #1D4ED8   Hover / active
+tt-blue-light / accentLight #EFF6FF Fondos suaves de acento
+tt-navy / theme.text       #111827   Texto principal (y fondo de sidebar)
+tt-gray / theme.textMuted  #6B7280   Texto secundario, iconos inactivos
+tt-border                  #E5E7EB   Bordes de tarjetas y tablas
+tt-surface / theme.page    #F9FAFB   Fondo general de la app
+theme.primary              #0F3471   Botones primarios (Volver al dashboard, Reintentar)
+theme.sidebar.*            bg #111827, texto #9CA3AF, activo #374151, hover #1F2937 — sidebar ahora oscura (antes clara, ver §4)
 ```
 
-Estados: verde #00A67C (analizado), naranja #F5A623 (revisión), rojo #E24B4A (error), azul TT con pulse (procesando).
+Estados: verde #10B981 / `theme.success` (analizado), azul #3B82F6 / `theme.info` con pulse (procesando), naranja #F59E0B / `theme.warning` (revisión), rojo #EF4444 / `theme.error` (error).
 
 **Tipografía**:
 - **Space Grotesk** (500 principalmente) — display, títulos, KPIs, números de categorías. Geométrica, moderna, cercana al feel de Movistar Text sin infringirla.
@@ -197,6 +209,7 @@ tcct-pliegos/
 └── src/
     ├── main.jsx                entry ReactDOM + QueryClientProvider (TanStack Query)
     ├── App.jsx                 shell (~130 líneas): navegación + hooks de Query + modal
+    ├── theme.js                paleta de colores centralizada (tokens), importada por componentes y vistas
     ├── index.css               @tailwind directives + @keyframes pulse + @keyframes indeterminate
     ├── logic.js                lógica pura (formateo, computeDashboardKpis, getLotesSumMismatch) + tests
     ├── api/pliegos.js          cliente fetch (listPliegos, analyzePdf, updatePliego, updateAnalysis) + normalización de fechas
@@ -330,4 +343,4 @@ Los 5 bloques del flujo TCCT y los cuellos de botella identificados (por si el p
 
 ---
 
-*Última actualización: 10/07/2026 · Iniciativa "full-stack sólido" completada (4 fases mergeadas a `main`). El producto extrae, persiste y edita pliegos contra Supabase con CI activo. Siguiente foco: backlog corto plazo o generador de borrador RFP (§11).*
+*Última actualización: 14/07/2026 · Iniciativa "full-stack sólido" completada (4 fases mergeadas a `main`) + retoque visual PR #13 (paleta centralizada en `theme.js`, sidebar oscura). El producto extrae, persiste y edita pliegos contra Supabase con CI activo. Siguiente foco: backlog corto plazo o generador de borrador RFP (§11).*

@@ -35,6 +35,21 @@ export default function App() {
 
   const selectedPliego = pliegos.find(p => p.id === selectedId) ?? null;
 
+  const pickDefaultPliegoId = () => {
+    const withAnalysis = pliegos.find(p => p.analysisData);
+    return withAnalysis?.id ?? pliegos[0]?.id ?? null;
+  };
+
+  const handleNavigate = (nextView) => {
+    if (nextView === 'analysis') {
+      setSelectedId(prev => {
+        if (prev && pliegos.some(p => p.id === prev)) return prev;
+        return pickDefaultPliegoId();
+      });
+    }
+    setView(nextView);
+  };
+
   const handleSelect = (p) => {
     setSelectedId(p.id);
     setView('analysis');
@@ -56,7 +71,7 @@ export default function App() {
   return (
     <>
       <div className="min-h-screen flex" style={{ background: theme.page, fontFamily: '"Inter", -apple-system, sans-serif', color: theme.text }}>
-        <Sidebar view={view} setView={setView} />
+        <Sidebar view={view} setView={handleNavigate} />
         <main className="flex-1 overflow-auto">
           {view === 'dashboard' && (
             isLoading ? (
@@ -79,8 +94,10 @@ export default function App() {
               <ErrorState message={error?.message} onRetry={invalidatePliegos} />
             ) : isLoading || isFetching ? (
               <LoadingState />
-            ) : (
+            ) : selectedId ? (
               <NotFoundState onBack={() => setView('dashboard')} />
+            ) : (
+              <EmptyAnalysisState onBack={() => setView('dashboard')} />
             )
           )}
         </main>
@@ -98,6 +115,25 @@ const LoadingState = () => (
   <div className="p-8 flex items-center gap-3 text-[14px]" style={{ color: theme.textMuted }}>
     <Loader2 size={18} strokeWidth={2} color={theme.link} className="animate-spin" />
     Cargando pliegos…
+  </div>
+);
+
+const EmptyAnalysisState = ({ onBack }) => (
+  <div className="p-8 max-w-[560px]">
+    <div className="flex items-start gap-3 p-4 rounded-md border" style={{ borderColor: theme.border, background: theme.muted }}>
+      <AlertTriangle size={18} color={theme.textMuted} strokeWidth={1.8} className="shrink-0 mt-0.5" />
+      <div>
+        <div className="text-[13px] mb-0.5" style={{ color: theme.text, fontWeight: 500 }}>Ningún expediente disponible</div>
+        <div className="text-[12px] mb-3" style={{ color: theme.textMuted }}>Sube un pliego o vuelve al dashboard para seleccionar uno.</div>
+        <button
+          onClick={onBack}
+          className="px-3 py-1.5 rounded-md text-[12px]"
+          style={{ background: theme.primary, color: theme.white, fontWeight: 500 }}
+        >
+          Volver al dashboard
+        </button>
+      </div>
+    </div>
   </div>
 );
 

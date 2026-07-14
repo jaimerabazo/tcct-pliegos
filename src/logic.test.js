@@ -80,12 +80,16 @@ describe('formatEuroFull', () => {
 });
 
 describe('formatShortDate', () => {
-  it('formatea como "DD mes AAAA" en minúsculas', () => {
-    expect(formatShortDate(new Date(2026, 6, 6))).toBe('06 jul 2026');
+  it('formatea como "DD mes AAAA" en minúsculas (componentes UTC)', () => {
+    expect(formatShortDate(new Date(Date.UTC(2026, 6, 6)))).toBe('06 jul 2026');
   });
 
   it('rellena el día con cero a la izquierda', () => {
-    expect(formatShortDate(new Date(2026, 0, 1))).toBe('01 ene 2026');
+    expect(formatShortDate(new Date(Date.UTC(2026, 0, 1)))).toBe('01 ene 2026');
+  });
+
+  it('no retrocede un día en husos al oeste de UTC (fechaLimite a medianoche Z)', () => {
+    expect(formatShortDate(new Date('2026-07-15T00:00:00.000Z'))).toBe('15 jul 2026');
   });
 });
 

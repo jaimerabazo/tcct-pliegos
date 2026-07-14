@@ -43,7 +43,9 @@ export const formatEuroFull = (n) => (isBlankNumber(n) ? '—' : new Intl.Number
 }).format(n));
 
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-export const formatShortDate = (d) => `${String(d.getDate()).padStart(2, '0')} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`;
+// Fechas de pliego (fechaLimite, etc.) se persisten ancladas a medianoche UTC (parseShortDate / Prisma).
+// Usar getUTC* evita mostrar el día natural anterior en husos al oeste de UTC.
+export const formatShortDate = (d) => `${String(d.getUTCDate()).padStart(2, '0')} ${MESES_CORTOS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 
 export const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 

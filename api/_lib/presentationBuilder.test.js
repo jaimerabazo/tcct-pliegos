@@ -74,6 +74,36 @@ describe('buildSlideSpecs — portada', () => {
     expect(cierreIso.value).toBe('15 jul 2026');
     expect(cierreDate.value).toBe('15 jul 2026');
   });
+
+  it('formatea fechaLimite en corto cuando ya llega como string UI (Claude/seed/normalizePliego)', () => {
+    const shortPliego = { ...pliego, fechaLimite: '15 jul 2026' };
+    const paddedPliego = { ...pliego, fechaLimite: '06 jul 2026' };
+    const cierre = build({ pliego: shortPliego })[0].meta.find((m) => m.label === 'Cierre de ofertas');
+    const cierrePadded = build({ pliego: paddedPliego })[0].meta.find((m) => m.label === 'Cierre de ofertas');
+    expect(cierre.value).toBe('15 jul 2026');
+    expect(cierrePadded.value).toBe('06 jul 2026');
+  });
+
+  it('no depende de que new Date parsee el string corto (entornos sin locale español)', () => {
+    const realDate = Date;
+    // Simula Node/Linux donde new Date("15 jul 2026") devuelve Invalid Date.
+    global.Date = class extends realDate {
+      constructor(...args) {
+        if (args.length === 1 && args[0] === '15 jul 2026') {
+          super(NaN);
+          return;
+        }
+        super(...args);
+      }
+    };
+    try {
+      const cierre = build({ pliego: { ...pliego, fechaLimite: '15 jul 2026' } })[0].meta
+        .find((m) => m.label === 'Cierre de ofertas');
+      expect(cierre.value).toBe('15 jul 2026');
+    } finally {
+      global.Date = realDate;
+    }
+  });
 });
 
 describe('buildSlideSpecs — secciones con tabla', () => {

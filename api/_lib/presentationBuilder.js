@@ -11,6 +11,7 @@
 // `analysisData` (datos ya validados/editados por el usuario, confianza incluida). NO se
 // pasa por Claude para no alterar cifras verificadas. Claude solo aporta el resumen final.
 import { formatEuroFull, formatNumber, formatShortDate } from '../../src/logic.js';
+import { parseShortDate } from '../../prisma/seed.js';
 
 // Orden de las secciones centrales — DEBE coincidir con `SECTIONS` de src/views/Analysis.jsx
 // (el índice que el usuario ve en la vista de análisis).
@@ -35,9 +36,20 @@ const orDash = (v) => {
   return String(v);
 };
 
-// Fechas de Prisma (Date) o ISO de la API → formato corto ("15 jul 2026"), como en la UI.
+// Fechas en cualquier shape que usa la app → formato corto ("15 jul 2026"), como en la UI.
+// Prisma/ISO pasan por `new Date`; el string corto de Claude/seed/normalizePliego por
+// `parseShortDate` (new Date("15 jul 2026") es implementation-defined y suele fallar).
 const orDashDate = (v) => {
   if (v === null || v === undefined || v === '') return '—';
+  if (v instanceof Date) {
+    return Number.isNaN(v.getTime()) ? '—' : formatShortDate(v);
+  }
+  if (typeof v === 'string') {
+    const fromShort = parseShortDate(v);
+    if (fromShort) return formatShortDate(fromShort);
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? '—' : formatShortDate(d);
+  }
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? '—' : formatShortDate(d);
 };

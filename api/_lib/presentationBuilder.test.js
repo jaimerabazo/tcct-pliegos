@@ -65,6 +65,15 @@ describe('buildSlideSpecs — portada', () => {
     const cover = build({ tagline: '' })[0];
     expect(cover.tagline).toBe('');
   });
+
+  it('formatea fechaLimite en corto aunque llegue como Date o ISO de Prisma', () => {
+    const isoPliego = { ...pliego, fechaLimite: '2026-07-15T00:00:00.000Z' };
+    const datePliego = { ...pliego, fechaLimite: new Date(Date.UTC(2026, 6, 15)) };
+    const cierreIso = build({ pliego: isoPliego })[0].meta.find((m) => m.label === 'Cierre de ofertas');
+    const cierreDate = build({ pliego: datePliego })[0].meta.find((m) => m.label === 'Cierre de ofertas');
+    expect(cierreIso.value).toBe('15 jul 2026');
+    expect(cierreDate.value).toBe('15 jul 2026');
+  });
 });
 
 describe('buildSlideSpecs — secciones con tabla', () => {

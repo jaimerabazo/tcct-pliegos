@@ -10,7 +10,7 @@
 // El contenido de las 7 diapositivas centrales se formatea directamente desde
 // `analysisData` (datos ya validados/editados por el usuario, confianza incluida). NO se
 // pasa por Claude para no alterar cifras verificadas. Claude solo aporta el resumen final.
-import { formatEuroFull, formatNumber } from '../../src/logic.js';
+import { formatEuroFull, formatNumber, formatShortDate } from '../../src/logic.js';
 import { PPT, FONT, LAYOUT } from './presentationTheme.js';
 
 // Orden de las secciones centrales — DEBE coincidir con `SECTIONS` de src/views/Analysis.jsx
@@ -34,6 +34,13 @@ const orDash = (v) => {
   if (v === null || v === undefined || v === '') return '—';
   if (Array.isArray(v)) return v.length ? v.join(', ') : '—';
   return String(v);
+};
+
+// Fechas de Prisma (Date) o ISO de la API → formato corto ("15 jul 2026"), como en la UI.
+const orDashDate = (v) => {
+  if (v === null || v === undefined || v === '') return '—';
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? '—' : formatShortDate(d);
 };
 
 const pct = (n) => (n === null || n === undefined || n === '' ? '—' : `${n}%`);
@@ -194,7 +201,7 @@ function buildCoverSpec(pliego, tagline) {
       { label: 'Lotes', value: String(formatNumber(pliego.lotes)) },
       { label: 'Procedimiento', value: orDash(pliego.procedimiento) },
       { label: 'ENS', value: orDash(pliego.ens) },
-      { label: 'Cierre de ofertas', value: orDash(pliego.fechaLimite) },
+      { label: 'Cierre de ofertas', value: orDashDate(pliego.fechaLimite) },
     ],
   };
 }

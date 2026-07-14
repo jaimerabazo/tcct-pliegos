@@ -208,7 +208,10 @@ function renderContentSlide(pptx, spec) {
   let cursor = BODY_TOP + (totalH < available ? Math.min(0.3, (available - totalH) / 2) : 0);
 
   if (spec.blocks.length === 0) {
-    slide.addText('Sin datos para esta sección.', {
+    const emptyMessage = spec.kind === 'final'
+      ? 'Sin conclusiones ni recomendación generadas.'
+      : 'Sin datos para esta sección.';
+    slide.addText(emptyMessage, {
       x: M, y: BODY_TOP + 0.3, w: CONTENT_W, h: 0.5,
       fontFace: FONT.body, fontSize: 13, color: PPT.gray, italic: true,
     });

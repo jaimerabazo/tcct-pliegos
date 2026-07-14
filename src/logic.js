@@ -75,6 +75,18 @@ export function computeDashboardKpis(pliegos) {
   return { count, totalImporte, avgImporte, avgConfianza };
 }
 
+// ---------- Selección de pliego en vista Análisis ----------
+
+export function pickDefaultPliegoId(pliegos) {
+  const withAnalysis = pliegos.find(p => p.analysisData);
+  return withAnalysis?.id ?? pliegos[0]?.id ?? null;
+}
+
+export function resolveSelectedPliegoId(pliegos, prevId) {
+  if (prevId && pliegos.some(p => p.id === prevId)) return prevId;
+  return pickDefaultPliegoId(pliegos);
+}
+
 // ---------- Validación lotes ↔ importe total ----------
 
 export function getLotesSumMismatch(pliego, analysisData) {

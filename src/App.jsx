@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { listPliegos, updatePliego, updateAnalysis } from './api/pliegos.js';
+import { resolveSelectedPliegoId } from './logic.js';
 import { Sidebar } from './components/Sidebar.jsx';
 import { UploadModal } from './components/UploadModal.jsx';
 import { Dashboard } from './views/Dashboard.jsx';
@@ -35,26 +36,17 @@ export default function App() {
 
   const selectedPliego = pliegos.find(p => p.id === selectedId) ?? null;
 
-  const pickDefaultPliegoId = () => {
-    const withAnalysis = pliegos.find(p => p.analysisData);
-    return withAnalysis?.id ?? pliegos[0]?.id ?? null;
-  };
-
-  const resolveSelectedId = (prev) => {
-    if (prev) return prev;
-    return pickDefaultPliegoId();
-  };
-
   // Si el usuario abre Análisis antes de que cargue la lista, selectedId queda null
-  // y hay que re-resolverlo cuando lleguen los pliegos.
+  // y hay que re-resolverlo cuando lleguen los pliegos. También re-resuelve si el id
+  // guardado ya no existe (p. ej. borrado en BD).
   useEffect(() => {
     if (view !== 'analysis' || isLoading) return;
-    setSelectedId(resolveSelectedId);
+    setSelectedId(prev => resolveSelectedPliegoId(pliegos, prev));
   }, [view, isLoading, pliegos]);
 
   const handleNavigate = (nextView) => {
     if (nextView === 'analysis' && !isLoading) {
-      setSelectedId(resolveSelectedId);
+      setSelectedId(prev => resolveSelectedPliegoId(pliegos, prev));
     }
     setView(nextView);
   };

@@ -14,6 +14,8 @@ import {
   getLotesSumMismatch,
   blankNumberToNull,
   normalizeAnalysisNumbers,
+  pickDefaultPliegoId,
+  resolveSelectedPliegoId,
 } from './logic.js';
 
 describe('isBlankNumber', () => {
@@ -253,6 +255,49 @@ describe('normalizeAnalysisNumbers', () => {
     expect(() => normalizeAnalysisNumbers({})).not.toThrow();
     const out = normalizeAnalysisNumbers({});
     expect(out).toEqual({});
+  });
+});
+
+describe('pickDefaultPliegoId', () => {
+  it('devuelve null para lista vacía', () => {
+    expect(pickDefaultPliegoId([])).toBeNull();
+  });
+
+  it('prefiere el primer pliego con analysisData', () => {
+    const pliegos = [
+      { id: 'a', analysisData: null },
+      { id: 'b', analysisData: { resumen: {} } },
+      { id: 'c', analysisData: { resumen: {} } },
+    ];
+    expect(pickDefaultPliegoId(pliegos)).toBe('b');
+  });
+
+  it('cae al primer pliego si ninguno tiene analysisData', () => {
+    const pliegos = [{ id: 'a' }, { id: 'b' }];
+    expect(pickDefaultPliegoId(pliegos)).toBe('a');
+  });
+});
+
+describe('resolveSelectedPliegoId', () => {
+  const pliegos = [
+    { id: 'a' },
+    { id: 'b', analysisData: { resumen: {} } },
+  ];
+
+  it('conserva prevId si sigue existiendo en la lista', () => {
+    expect(resolveSelectedPliegoId(pliegos, 'a')).toBe('a');
+  });
+
+  it('reemplaza prevId obsoleto por el default', () => {
+    expect(resolveSelectedPliegoId(pliegos, 'deleted')).toBe('b');
+  });
+
+  it('elige el default cuando prevId es null', () => {
+    expect(resolveSelectedPliegoId(pliegos, null)).toBe('b');
+  });
+
+  it('devuelve null si la lista está vacía y prevId es obsoleto', () => {
+    expect(resolveSelectedPliegoId([], 'gone')).toBeNull();
   });
 });
 

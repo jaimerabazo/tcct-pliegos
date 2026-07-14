@@ -13,6 +13,11 @@ const BODY_BOTTOM = LAYOUT.h - 0.55; // reserva para el pie
 const BLOCK_GAP = 0.25;
 const BLOCK_HEADING_H = 0.42;
 const TABLE_ROW_H = 0.34;
+const TABLE_FONT_SIZE = 10;
+const TABLE_HEADER_FONT_SIZE = 11;
+const TABLE_LINE_SPACING = 1.2;
+const TABLE_LINE_H = (TABLE_FONT_SIZE * TABLE_LINE_SPACING) / 72;
+const TABLE_CELL_PAD = TABLE_ROW_H - TABLE_LINE_H;
 const KV_ROW_H = 0.46;
 const BULLET_ITEM_H = 0.34;
 const PARAGRAPH_FONT_SIZE = 12;
@@ -63,6 +68,36 @@ function wrapTextToLines(text, maxCharsPerLine) {
 function estimateParagraphTextHeight(text) {
   const lineCount = wrapTextToLines(text, charsPerLine()).length;
   return Math.max(PARAGRAPH_MIN_H, lineCount * PARAGRAPH_LINE_H);
+}
+
+function tableColumnWidths(columnCount) {
+  const colW = CONTENT_W / Math.max(1, columnCount);
+  return Array(columnCount).fill(colW);
+}
+
+function estimateTableCellHeight(text, columnWidth, fontSize = TABLE_FONT_SIZE) {
+  const lineCount = wrapTextToLines(text, charsPerLine(columnWidth, fontSize)).length;
+  const lineH = (fontSize * TABLE_LINE_SPACING) / 72;
+  return Math.max(TABLE_ROW_H, lineCount * lineH + TABLE_CELL_PAD);
+}
+
+function estimateTableRowHeight(cells, columnWidths, fontSize = TABLE_FONT_SIZE) {
+  return cells.reduce((maxH, cell, i) => {
+    const colW = columnWidths[i] ?? columnWidths[columnWidths.length - 1];
+    return Math.max(maxH, estimateTableCellHeight(cell, colW, fontSize));
+  }, TABLE_ROW_H);
+}
+
+function estimateTableRowHeights(block) {
+  const widths = tableColumnWidths(block.columns.length);
+  const headerH = estimateTableRowHeight(block.columns, widths, TABLE_HEADER_FONT_SIZE);
+  const bodyHs = block.rows.map((row) => estimateTableRowHeight(row, widths, TABLE_FONT_SIZE));
+  return [headerH, ...bodyHs];
+}
+
+function estimateTableBlockHeight(block) {
+  const headH = block.heading ? BLOCK_HEADING_H : 0;
+  return headH + estimateTableRowHeights(block).reduce((acc, h) => acc + h, 0);
 }
 
 function splitParagraphText(text, maxLines) {
@@ -170,7 +205,7 @@ function addFooter(slide, spec) {
 // Altura estimada alineada con las constantes de render (rowH, cursor, etc.).
 function estimateBlockHeight(block) {
   const headH = block.heading ? BLOCK_HEADING_H : 0;
-  if (block.type === 'table') return headH + (block.rows.length + 1) * TABLE_ROW_H;
+  if (block.type === 'table') return estimateTableBlockHeight(block);
   if (block.type === 'keyvalue') return headH + block.rows.length * KV_ROW_H;
   if (block.type === 'bullets') return headH + block.items.length * BULLET_ITEM_H;
   if (block.type === 'paragraph') return headH + estimateParagraphTextHeight(block.text);
@@ -205,7 +240,15 @@ function splitParagraphBlock(block, maxHeight, showHeading = true) {
 
 function splitTableBlock(block, maxHeight, showHeading = true) {
   const headingH = showHeading && block.heading ? BLOCK_HEADING_H : 0;
-  const maxRows = Math.floor((maxHeight - headingH) / TABLE_ROW_H) - 1;
+  const rowHs = estimateTableRowHeights(block);
+  let used = headingH + rowHs[0];
+  let maxRows = 0;
+  for (let i = 0; i < block.rows.length; i++) {
+    const next = used + rowHs[i + 1];
+    if (next > maxHeight) break;
+    used = next;
+    maxRows += 1;
+  }
   if (maxRows >= block.rows.length) {
     return { chunk: block, remainder: null };
   }
@@ -363,10 +406,11 @@ function renderTableBlock(pptx, slide, block, y) {
     })),
   );
   const rows = [header, ...body];
+  const rowH = estimateTableRowHeights(block);
   slide.addTable(rows, {
     x: M, y, w: CONTENT_W,
     border: { type: 'solid', color: PPT.border, pt: 1 },
-    align: 'left', valign: 'middle', autoPage: false, rowH: TABLE_ROW_H,
+    align: 'left', valign: 'middle', autoPage: false, rowH,
   });
 }
 
@@ -492,4 +536,9 @@ export async function renderPptx(specs, { expediente } = {}) {
   return pptx.write({ outputType: 'nodebuffer' });
 }
 
-export { estimateBlockHeight, estimateParagraphTextHeight, paginateBlocks };
+export {
+  estimateBlockHeight,
+  estimateParagraphTextHeight,
+  estimateTableRowHeights,
+  paginateBlocks,
+};

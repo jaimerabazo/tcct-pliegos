@@ -2,12 +2,14 @@ import { describe, it, expect } from 'vitest';
 import {
   estimateBlockHeight,
   estimateParagraphTextHeight,
+  estimateTableRowHeights,
   paginateBlocks,
 } from './presentationRenderer.js';
 
 const BODY_TOP = 1.5;
 const BODY_BOTTOM = 7.5 - 0.55;
 const BLOCK_GAP = 0.25;
+const TABLE_ROW_H = 0.34;
 const PARAGRAPH_LINE_H = (12 * 1.2) / 72;
 
 function pageContentHeight(pageBlocks) {
@@ -32,6 +34,62 @@ describe('estimateParagraphTextHeight', () => {
     expect(short).toBe(PARAGRAPH_LINE_H);
     expect(long).toBeGreaterThan(short);
     expect(long).toBeGreaterThan(0.9);
+  });
+});
+
+describe('estimateBlockHeight — tables', () => {
+  it('grows table height when cell text wraps beyond one row', () => {
+    const shortTable = {
+      type: 'table',
+      columns: ['Tipo', 'Descripción', 'Cuantía'],
+      rows: [['Retraso', 'Penalización por día', '0,5 %']],
+    };
+    const longTable = {
+      type: 'table',
+      columns: ['Tipo', 'Descripción', 'Cuantía'],
+      rows: [[
+        'Incumplimiento SLA',
+        'Penalización por cada incumplimiento grave de disponibilidad o tiempos de respuesta pactados en el Anexo de Niveles de Servicio. '.repeat(4),
+        'Hasta 5 % del importe del lote afectado',
+      ]],
+    };
+
+    const fixedH = (longTable.rows.length + 1) * TABLE_ROW_H;
+    const shortH = estimateBlockHeight(shortTable);
+    const longH = estimateBlockHeight(longTable);
+
+    expect(shortH).toBeGreaterThanOrEqual(fixedH);
+    expect(longH).toBeGreaterThan(shortH);
+    expect(estimateTableRowHeights(longTable)[1]).toBeGreaterThan(TABLE_ROW_H);
+  });
+
+  it('paginates penalizaciones-style tables before they overlap the footer', () => {
+    const longDescription = 'Descripción extensa de la penalización contractual con múltiples condiciones y referencias normativas. ';
+    const table = {
+      type: 'table',
+      heading: 'Penalizaciones',
+      columns: ['Tipo', 'Descripción', 'Cuantía'],
+      rows: Array(8).fill(null).map((_, i) => [
+        `Tipo ${i + 1}`,
+        `${longDescription}`.repeat(6),
+        `${(i + 1) * 0.5} %`,
+      ]),
+    };
+
+    const oldEstimate = 0.42 + (table.rows.length + 1) * TABLE_ROW_H;
+    expect(BODY_TOP + oldEstimate).toBeLessThanOrEqual(BODY_BOTTOM);
+
+    const pages = paginateBlocks([table]);
+
+    pages.forEach((page) => expect(fitsOnPage(page)).toBe(true));
+    expect(estimateBlockHeight(table)).toBeGreaterThan(oldEstimate);
+    expect(pages.length).toBeGreaterThan(1);
+
+    const rowCount = pages.reduce(
+      (acc, page) => acc + page[0].block.rows.length,
+      0,
+    );
+    expect(rowCount).toBe(8);
   });
 });
 

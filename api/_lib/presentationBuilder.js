@@ -56,6 +56,11 @@ const orDashDate = (v) => {
 
 const pct = (n) => (n === null || n === undefined || n === '' ? '—' : `${n}%`);
 
+// Sin filas → sin bloque: renderContentSlide muestra "Sin datos para esta sección."
+const tableBlockOrEmpty = (columns, rows) => (
+  rows.length ? [{ type: 'table', columns, rows }] : []
+);
+
 // --- Builders por sección (cada uno devuelve { blocks } para su diapositiva) ---
 
 function buildResumenBlocks(analysisData) {
@@ -80,37 +85,31 @@ function buildResumenBlocks(analysisData) {
 
 function buildLotesBlocks(analysisData) {
   const lotes = analysisData.lotes ?? [];
-  return [
-    {
-      type: 'table',
-      columns: ['Nº', 'Descripción', 'CPV', 'Importe', 'Confianza'],
-      rows: lotes.map((l) => [
-        orDash(l.numero),
-        orDash(l.descripcion),
-        orDash(l.cpv),
-        formatEuroFull(l.importe),
-        pct(l.confianza),
-      ]),
-    },
-  ];
+  return tableBlockOrEmpty(
+    ['Nº', 'Descripción', 'CPV', 'Importe', 'Confianza'],
+    lotes.map((l) => [
+      orDash(l.numero),
+      orDash(l.descripcion),
+      orDash(l.cpv),
+      formatEuroFull(l.importe),
+      pct(l.confianza),
+    ]),
+  );
 }
 
 function buildPerfilesBlocks(analysisData) {
   const perfiles = analysisData.perfiles ?? [];
-  return [
-    {
-      type: 'table',
-      columns: ['Código', 'Categoría', 'Nº', 'Exp. (años)', 'Certificaciones', 'Lote'],
-      rows: perfiles.map((p) => [
-        orDash(p.codigo),
-        orDash(p.categoria),
-        String(formatNumber(p.headcount)),
-        String(formatNumber(p.experiencia)),
-        orDash(p.certs),
-        orDash(p.lote),
-      ]),
-    },
-  ];
+  return tableBlockOrEmpty(
+    ['Código', 'Categoría', 'Nº', 'Exp. (años)', 'Certificaciones', 'Lote'],
+    perfiles.map((p) => [
+      orDash(p.codigo),
+      orDash(p.categoria),
+      String(formatNumber(p.headcount)),
+      String(formatNumber(p.experiencia)),
+      orDash(p.certs),
+      orDash(p.lote),
+    ]),
+  );
 }
 
 function buildSolvenciaBlocks(analysisData) {
@@ -140,32 +139,26 @@ function buildSolvenciaBlocks(analysisData) {
 
 function buildCriteriosBlocks(analysisData) {
   const criterios = analysisData.criterios ?? [];
-  return [
-    {
-      type: 'table',
-      columns: ['Criterio', 'Tipo', 'Peso'],
-      rows: criterios.map((c) => [
-        orDash(c.criterio),
-        c.tipo === 'automatico' ? 'Automático' : c.tipo === 'juicio' ? 'Juicio de valor' : orDash(c.tipo),
-        pct(c.peso),
-      ]),
-    },
-  ];
+  return tableBlockOrEmpty(
+    ['Criterio', 'Tipo', 'Peso'],
+    criterios.map((c) => [
+      orDash(c.criterio),
+      c.tipo === 'automatico' ? 'Automático' : c.tipo === 'juicio' ? 'Juicio de valor' : orDash(c.tipo),
+      pct(c.peso),
+    ]),
+  );
 }
 
 function buildPenalizacionesBlocks(analysisData) {
   const pen = analysisData.penalizaciones ?? [];
-  return [
-    {
-      type: 'table',
-      columns: ['Tipo', 'Descripción', 'Cuantía'],
-      rows: pen.map((p) => [
-        orDash(p.tipo),
-        orDash(p.descripcion),
-        orDash(p.importe),
-      ]),
-    },
-  ];
+  return tableBlockOrEmpty(
+    ['Tipo', 'Descripción', 'Cuantía'],
+    pen.map((p) => [
+      orDash(p.tipo),
+      orDash(p.descripcion),
+      orDash(p.importe),
+    ]),
+  );
 }
 
 function buildPlazosBlocks(analysisData) {

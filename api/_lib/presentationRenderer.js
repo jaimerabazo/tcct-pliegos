@@ -190,7 +190,14 @@ function splitBlockForHeight(block, maxHeight, showHeading = true) {
   if (block.type === 'table') return splitTableBlock(block, maxHeight, showHeading);
   if (block.type === 'keyvalue') return splitKeyValueBlock(block, maxHeight, showHeading);
   if (block.type === 'bullets') return splitBulletsBlock(block, maxHeight, showHeading);
-  return { chunk: block, remainder: null };
+  const blockH = estimateBlockHeight({
+    ...block,
+    heading: showHeading ? block.heading : undefined,
+  });
+  if (blockH <= maxHeight) {
+    return { chunk: block, remainder: null };
+  }
+  return { chunk: null, remainder: block };
 }
 
 // Reparte bloques en páginas que respetan BODY_BOTTOM. Las tablas (y listas largas)

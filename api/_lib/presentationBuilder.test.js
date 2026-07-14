@@ -237,7 +237,7 @@ describe('buildSlideSpecs — resumen final', () => {
 
 describe('buildSlideSpecs — datos parciales/vacíos (robustez)', () => {
   // Claude, o una edición manual agresiva, podrían dejar secciones ausentes o vacías.
-  // El builder no debe reventar: rellena con "—" y tablas vacías, nunca lanza.
+  // El builder no debe reventar: rellena con "—", omite bloques de tabla sin filas, nunca lanza.
   const sparsePliego = { expediente: '2026/0001', titulo: 'Mínimo', organismo: '', importe: null, lotes: null, procedimiento: '', ens: '', fechaLimite: null };
   const sparseAnalysis = {}; // sin ninguna sección
 
@@ -246,12 +246,12 @@ describe('buildSlideSpecs — datos parciales/vacíos (robustez)', () => {
     expect(specs).toHaveLength(9);
   });
 
-  it('tablas vacías cuando no hay lotes/perfiles/criterios/penalizaciones', () => {
+  it('omite bloques de tabla cuando no hay lotes/perfiles/criterios/penalizaciones', () => {
     const specs = buildSlideSpecs({ pliego: sparsePliego, analysisData: sparseAnalysis });
-    expect(specs[2].blocks[0].rows).toEqual([]); // lotes
-    expect(specs[3].blocks[0].rows).toEqual([]); // perfiles
-    expect(specs[5].blocks[0].rows).toEqual([]); // criterios
-    expect(specs[6].blocks[0].rows).toEqual([]); // penalizaciones
+    expect(specs[2].blocks).toEqual([]); // lotes
+    expect(specs[3].blocks).toEqual([]); // perfiles
+    expect(specs[5].blocks).toEqual([]); // criterios
+    expect(specs[6].blocks).toEqual([]); // penalizaciones
   });
 
   it('keyvalue con guiones cuando faltan resumen/marco/solvencia/plazos', () => {

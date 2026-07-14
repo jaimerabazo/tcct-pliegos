@@ -21,13 +21,13 @@ export const Sidebar = ({ view, setView }) => (
       <div className="text-[10px] uppercase tracking-wider px-2 py-2 mb-1" style={{ color: theme.sidebar.text, letterSpacing: '0.08em' }}>Workspace</div>
       {[
         { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-        { id: 'analysis-list', icon: FileSearch, label: 'Análisis' },
+        { id: 'analysis', icon: FileSearch, label: 'Análisis' },
       ].map(item => {
-        const active = view === item.id || (item.id === 'dashboard' && view === 'analysis');
+        const active = view === item.id;
         return (
           <button
             key={item.id}
-            onClick={() => setView('dashboard')}
+            onClick={() => setView(item.id)}
             className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] transition mb-0.5"
             style={{
               background: active ? theme.sidebar.activeBg : 'transparent',

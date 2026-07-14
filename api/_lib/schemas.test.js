@@ -1,8 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { pliegoPatchSchema, analysisDataSchema, pliegoFromAnalysisSchema } from './schemas.js';
+import { pliegoPatchSchema, analysisDataSchema, pliegoFromAnalysisSchema, presentationContentSchema } from './schemas.js';
 import { MOCK_ANALYSIS } from '../../prisma/seed.js';
 
 const validAnalysis = MOCK_ANALYSIS['2026-7008'];
+
+const validPresentationContent = {
+  tagline: 'Análisis para Comité de Ofertas',
+  resumenFinal: {
+    titulares: ['Contrato marco de soporte a GISS', '18,5 M€ en 3 lotes'],
+    puntosFuertes: ['Certificaciones ENS Alto en regla'],
+    riesgos: ['El precio pesa un 40%'],
+    recomendacion: 'Presentar oferta a los tres lotes.',
+  },
+};
 
 describe('pliegoPatchSchema', () => {
   it('acepta un patch parcial válido', () => {
@@ -123,5 +133,46 @@ describe('pliegoFromAnalysisSchema', () => {
 
   it('rechaza strings vacíos en campos de texto', () => {
     expect(pliegoFromAnalysisSchema.safeParse({ ...validPliego, titulo: '' }).success).toBe(false);
+  });
+});
+
+describe('presentationContentSchema', () => {
+  it('acepta el contenido que devuelve Claude para la presentación', () => {
+    expect(presentationContentSchema.safeParse(validPresentationContent).success).toBe(true);
+  });
+
+  it('acepta tagline vacío y arrays/recomendación vacíos (el builder los omite)', () => {
+    const vacio = {
+      tagline: '',
+      resumenFinal: { titulares: [], puntosFuertes: [], riesgos: [], recomendacion: '' },
+    };
+    expect(presentationContentSchema.safeParse(vacio).success).toBe(true);
+  });
+
+  it('rechaza si falta resumenFinal', () => {
+    expect(presentationContentSchema.safeParse({ tagline: 'x' }).success).toBe(false);
+  });
+
+  it('rechaza si falta un campo de resumenFinal', () => {
+    const { riesgos, ...incompleto } = validPresentationContent.resumenFinal;
+    expect(presentationContentSchema.safeParse({ tagline: 'x', resumenFinal: incompleto }).success).toBe(false);
+  });
+
+  it('rechaza titulares que no son array de strings', () => {
+    const malo = {
+      ...validPresentationContent,
+      resumenFinal: { ...validPresentationContent.resumenFinal, titulares: [1, 2] },
+    };
+    expect(presentationContentSchema.safeParse(malo).success).toBe(false);
+  });
+
+  it('rechaza campos desconocidos (strict)', () => {
+    const extra = { ...validPresentationContent, foo: 'bar' };
+    expect(presentationContentSchema.safeParse(extra).success).toBe(false);
+    const extraNested = {
+      ...validPresentationContent,
+      resumenFinal: { ...validPresentationContent.resumenFinal, foo: 'bar' },
+    };
+    expect(presentationContentSchema.safeParse(extraNested).success).toBe(false);
   });
 });

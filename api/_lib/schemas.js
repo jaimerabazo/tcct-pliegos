@@ -122,6 +122,25 @@ export const pliegoPatchSchema = z.object({
 
 // --- Exportación a PowerPoint (api/pliegos/[id]/presentation.js) ---
 //
+// Body de la petición de generación: el frontend manda su pliego cacheado (que ya
+// incluye analysisData) para que el endpoint NO tenga que releer de la BD (decisión
+// de eficiencia — la función no necesita Prisma ni DATABASE_URL). Se valida de forma
+// defensiva: la cabecera de forma laxa (viene de nuestra propia API, `.passthrough()`
+// tolera id/estado/fechaAnalisis/etc.) y `analysisData` de forma estricta con
+// analysisDataSchema. Si el pliego no está analizado, analysisData es null → falla la
+// validación → 400 (además la UI deshabilita el botón en ese caso).
+export const presentationRequestSchema = z.object({
+  expediente: z.string().min(1),
+  titulo: z.string().min(1),
+  organismo: z.string(),
+  importe: z.number().nullable().optional(),
+  lotes: z.number().nullable().optional(),
+  procedimiento: z.string().optional(),
+  ens: z.string().optional(),
+  fechaLimite: z.union([z.string(), z.null()]).optional(),
+  analysisData: analysisDataSchema,
+}).passthrough();
+
 // Las 7 diapositivas centrales se formatean directamente desde analysisData (no se
 // pasan por Claude). Claude SOLO genera el contenido "sintetizado" que no existe aún:
 // el tagline de portada y el resumen final (conclusiones). Este schema valida esa

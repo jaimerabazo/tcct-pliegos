@@ -3,6 +3,9 @@
   "functions": {
     "api/analyze.js": {
       "maxDuration": 300
+    },
+    "api/pliegos/[id]/presentation.js": {
+      "maxDuration": 60
     }
   }
 }

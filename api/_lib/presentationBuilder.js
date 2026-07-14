@@ -11,7 +11,6 @@
 // `analysisData` (datos ya validados/editados por el usuario, confianza incluida). NO se
 // pasa por Claude para no alterar cifras verificadas. Claude solo aporta el resumen final.
 import { formatEuroFull, formatNumber, formatShortDate } from '../../src/logic.js';
-import { PPT, FONT, LAYOUT } from './presentationTheme.js';
 
 // Orden de las secciones centrales — DEBE coincidir con `SECTIONS` de src/views/Analysis.jsx
 // (el índice que el usuario ve en la vista de análisis).

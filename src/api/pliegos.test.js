@@ -177,7 +177,7 @@ describe('generatePresentation', () => {
 });
 
 describe('downloadBlob', () => {
-  it('crea un <a download> con el nombre dado y lo dispara', () => {
+  it('crea un <a download> con el nombre dado, lo dispara y difiere la limpieza', async () => {
     global.URL.createObjectURL = vi.fn(() => 'blob:fake-url');
     global.URL.revokeObjectURL = vi.fn();
     const created = [];
@@ -197,7 +197,13 @@ describe('downloadBlob', () => {
     expect(anchor.href).toContain('blob:fake-url');
     expect(clickSpy).toHaveBeenCalled();
     expect(global.URL.createObjectURL).toHaveBeenCalled();
+    // El click es síncrono; la limpieza (remove + revoke) se difiere para no abortar la descarga.
+    expect(global.URL.revokeObjectURL).not.toHaveBeenCalled();
+    expect(document.body.contains(anchor)).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake-url');
-    expect(document.body.contains(anchor)).toBe(false); // se limpia tras el click
+    expect(document.body.contains(anchor)).toBe(false);
   });
 });

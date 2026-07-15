@@ -156,7 +156,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
       const { blob, filename } = await generatePresentation(pliego);
       downloadBlob(blob, filename);
     } catch (err) {
-      setGenError(err?.message || 'No se ha podido generar la presentación. Inténtalo de nuevo.');
+      setGenError(err?.message || 'Inténtalo de nuevo.');
     } finally {
       setGenerating(false);
     }
@@ -204,6 +204,7 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
     if (sectionId === section) return;
     if (!confirmDiscardIfNeeded()) return;
     if (editingSection) cancelEdit();
+    setGenError(null); // el aviso de generación es puntual: no debe persistir al cambiar de sección
     setSection(sectionId);
   };
 

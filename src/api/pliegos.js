@@ -85,7 +85,7 @@ export async function generatePresentation(pliego) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.error || `No se ha podido generar la presentación (HTTP ${res.status}).`);
+    throw new Error(body?.error || `El servidor ha respondido con un error (HTTP ${res.status}).`);
   }
   const blob = await res.blob();
   const expedienteSafe = (pliego.expediente || 'pliego').replace(/[^\w.-]+/g, '-');
@@ -94,6 +94,8 @@ export async function generatePresentation(pliego) {
 }
 
 // Dispara la descarga de un Blob en el navegador (crea un <a download> temporal).
+// El revoke se difiere: en algunos navegadores (Safari/WebKit) revocar la object URL
+// de forma síncrona tras click() aborta la descarga antes de que empiece a leerla.
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -101,6 +103,8 @@ export function downloadBlob(blob, filename) {
   a.download = filename;
   document.body.appendChild(a);
   a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
 }

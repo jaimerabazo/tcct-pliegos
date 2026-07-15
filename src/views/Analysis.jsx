@@ -1,13 +1,14 @@
 import { theme } from '../theme.js';
 import { useState } from 'react';
 import {
-  ArrowLeft, Download, Wand2, Package, Users, Shield, Scale, AlertTriangle,
+  ArrowLeft, Download, Presentation, Loader2, Package, Users, Shield, Scale, AlertTriangle,
   Calendar, FileText, Building2, FileSearch,
 } from 'lucide-react';
 import {
   isBlankNumber, formatNumber, formatEuroFull, blankNumberToNull, normalizeAnalysisNumbers,
   listToText, textToList, linesToText, textToLines, getLotesSumMismatch,
 } from '../logic.js';
+import { generatePresentation, downloadBlob } from '../api/pliegos.js';
 import {
   ConfidenceBadge, SectionCard, SectionTitle, EditButton, SaveCancelButtons,
 } from '../components/section.jsx';
@@ -25,26 +26,41 @@ const SECTIONS = [
   { id: 'plazos', label: 'Plazos e hitos', icon: Calendar },
 ];
 
-const Toolbar = ({ onBack }) => (
-  <div className="flex items-center justify-between px-8 py-4 border-b" style={{ borderColor: theme.border, background: theme.card }}>
-    <button onClick={onBack} className="flex items-center gap-1.5 text-[13px]" style={{ color: theme.textMuted }}
-      onMouseEnter={e => e.currentTarget.style.color = theme.text}
-      onMouseLeave={e => e.currentTarget.style.color = theme.textMuted}>
-      <ArrowLeft size={14} strokeWidth={1.8} />
-      Dashboard
-    </button>
-    <div className="flex items-center gap-2">
-      <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[12px]" style={{ borderColor: theme.border, color: theme.text }}>
-        <Wand2 size={12} strokeWidth={1.8} />
-        Generar borrador RFP
+const Toolbar = ({ onBack, onGeneratePresentation, generating = false, canGenerate = true }) => {
+  const genEnabled = canGenerate && !generating;
+  return (
+    <div className="flex items-center justify-between px-8 py-4 border-b" style={{ borderColor: theme.border, background: theme.card }}>
+      <button onClick={onBack} className="flex items-center gap-1.5 text-[13px]" style={{ color: theme.textMuted }}
+        onMouseEnter={e => e.currentTarget.style.color = theme.text}
+        onMouseLeave={e => e.currentTarget.style.color = theme.textMuted}>
+        <ArrowLeft size={14} strokeWidth={1.8} />
+        Dashboard
       </button>
-      <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px]" style={{ background: theme.text, color: theme.card }}>
-        <Download size={12} strokeWidth={2} />
-        Exportar a Excel
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onGeneratePresentation}
+          disabled={!genEnabled}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-[12px]"
+          style={{
+            borderColor: theme.border,
+            color: genEnabled ? theme.text : theme.textMuted,
+            cursor: genEnabled ? 'pointer' : 'not-allowed',
+            opacity: canGenerate ? 1 : 0.6,
+          }}
+        >
+          {generating
+            ? <Loader2 size={12} strokeWidth={2} className="animate-spin" />
+            : <Presentation size={12} strokeWidth={1.8} />}
+          {generating ? 'Generando…' : 'Generar presentación'}
+        </button>
+        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px]" style={{ background: theme.text, color: theme.card }}>
+          <Download size={12} strokeWidth={2} />
+          Exportar a Excel
+        </button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const HeaderMeta = ({ pliego }) => (
   <>
@@ -94,7 +110,7 @@ const Ribbon = ({ items }) => (
 // estado vacío claro. La cabecera e importe/lotes sí son reales (vienen del pliego).
 const AnalysisEmptyState = ({ pliego, onBack }) => (
   <div className="max-w-[1200px]">
-    <Toolbar onBack={onBack} />
+    <Toolbar onBack={onBack} canGenerate={false} />
     <div className="px-8 pt-8 pb-6">
       <HeaderMeta pliego={pliego} />
       <Ribbon items={[
@@ -128,7 +144,23 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
   const [draftInitial, setDraftInitial] = useState(null); // snapshot JSON del draft (+ importe total) al empezar a editar
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState(null);
   const data = pliego.analysisData;
+
+  const handleGeneratePresentation = async () => {
+    if (generating) return;
+    setGenError(null);
+    setGenerating(true);
+    try {
+      const { blob, filename } = await generatePresentation(pliego);
+      downloadBlob(blob, filename);
+    } catch (err) {
+      setGenError(err?.message || 'No se ha podido generar la presentación. Inténtalo de nuevo.');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const buildDraft = (sectionId) => {
     if (sectionId === 'resumen') {
@@ -259,7 +291,11 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
 
   return (
     <div className="max-w-[1200px]">
-      <Toolbar onBack={handleBack} />
+      <Toolbar
+        onBack={handleBack}
+        onGeneratePresentation={handleGeneratePresentation}
+        generating={generating}
+      />
 
       {/* Header con nº expediente */}
       <div className="px-8 pt-8 pb-6">
@@ -300,6 +336,14 @@ export const Analysis = ({ pliego, onBack, onUpdateAnalysis, onUpdatePliego }) =
 
         {/* Contenido */}
         <div className="min-w-0">
+          {genError && (
+            <div className="flex items-start gap-3 p-3 mb-4 rounded-md border" style={{ borderColor: theme.errorBorder, background: theme.errorBg }}>
+              <AlertTriangle size={16} color={theme.errorText} strokeWidth={1.8} className="shrink-0 mt-0.5" />
+              <div className="text-[12.5px]" style={{ color: theme.errorText }}>
+                No se ha podido generar la presentación: {genError}
+              </div>
+            </div>
+          )}
           {saveError && editingSection && (
             <div className="flex items-start gap-3 p-3 mb-4 rounded-md border" style={{ borderColor: theme.errorBorder, background: theme.errorBg }}>
               <AlertTriangle size={16} color={theme.errorText} strokeWidth={1.8} className="shrink-0 mt-0.5" />

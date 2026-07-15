@@ -1,8 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { pliegoPatchSchema, analysisDataSchema, pliegoFromAnalysisSchema } from './schemas.js';
-import { MOCK_ANALYSIS } from '../../prisma/seed.js';
+import { pliegoPatchSchema, analysisDataSchema, pliegoFromAnalysisSchema, presentationContentSchema, presentationRequestSchema } from './schemas.js';
+import { MOCK_PLIEGOS, MOCK_ANALYSIS } from '../../prisma/seed.js';
 
 const validAnalysis = MOCK_ANALYSIS['2026-7008'];
+
+// Cómo llega el pliego desde el frontend (fila normalizada + analysisData incluido).
+const validPresentationRequest = {
+  ...MOCK_PLIEGOS.find((p) => p.id === '2026-7008'),
+  analysisData: validAnalysis,
+};
+
+const validPresentationContent = {
+  tagline: 'Análisis para Comité de Ofertas',
+  resumenFinal: {
+    titulares: ['Contrato marco de soporte a GISS', '18,5 M€ en 3 lotes'],
+    puntosFuertes: ['Certificaciones ENS Alto en regla'],
+    riesgos: ['El precio pesa un 40%'],
+    recomendacion: 'Presentar oferta a los tres lotes.',
+  },
+};
 
 describe('pliegoPatchSchema', () => {
   it('acepta un patch parcial válido', () => {
@@ -123,5 +139,86 @@ describe('pliegoFromAnalysisSchema', () => {
 
   it('rechaza strings vacíos en campos de texto', () => {
     expect(pliegoFromAnalysisSchema.safeParse({ ...validPliego, titulo: '' }).success).toBe(false);
+  });
+});
+
+describe('presentationContentSchema', () => {
+  it('acepta el contenido que devuelve Claude para la presentación', () => {
+    expect(presentationContentSchema.safeParse(validPresentationContent).success).toBe(true);
+  });
+
+  it('acepta tagline vacío y arrays/recomendación vacíos (el builder los omite)', () => {
+    const vacio = {
+      tagline: '',
+      resumenFinal: { titulares: [], puntosFuertes: [], riesgos: [], recomendacion: '' },
+    };
+    expect(presentationContentSchema.safeParse(vacio).success).toBe(true);
+  });
+
+  it('rechaza si falta resumenFinal', () => {
+    expect(presentationContentSchema.safeParse({ tagline: 'x' }).success).toBe(false);
+  });
+
+  it('rechaza si falta un campo de resumenFinal', () => {
+    const { riesgos, ...incompleto } = validPresentationContent.resumenFinal;
+    expect(presentationContentSchema.safeParse({ tagline: 'x', resumenFinal: incompleto }).success).toBe(false);
+  });
+
+  it('rechaza titulares que no son array de strings', () => {
+    const malo = {
+      ...validPresentationContent,
+      resumenFinal: { ...validPresentationContent.resumenFinal, titulares: [1, 2] },
+    };
+    expect(presentationContentSchema.safeParse(malo).success).toBe(false);
+  });
+
+  it('rechaza campos desconocidos (strict)', () => {
+    const extra = { ...validPresentationContent, foo: 'bar' };
+    expect(presentationContentSchema.safeParse(extra).success).toBe(false);
+    const extraNested = {
+      ...validPresentationContent,
+      resumenFinal: { ...validPresentationContent.resumenFinal, foo: 'bar' },
+    };
+    expect(presentationContentSchema.safeParse(extraNested).success).toBe(false);
+  });
+});
+
+describe('presentationRequestSchema', () => {
+  it('acepta el pliego que manda el frontend (cabecera + analysisData)', () => {
+    expect(presentationRequestSchema.safeParse(validPresentationRequest).success).toBe(true);
+  });
+
+  it('tolera campos extra de la fila (id, estado, fechaAnalisis) vía passthrough', () => {
+    const conExtras = { ...validPresentationRequest, id: '2026-7008', estado: 'analizado', fechaAnalisis: '04 jul 2026' };
+    const result = presentationRequestSchema.safeParse(conExtras);
+    expect(result.success).toBe(true);
+    expect(result.data.id).toBe('2026-7008');
+  });
+
+  it('rechaza si analysisData es null (pliego sin analizar)', () => {
+    const sinAnalisis = { ...validPresentationRequest, analysisData: null };
+    expect(presentationRequestSchema.safeParse(sinAnalisis).success).toBe(false);
+  });
+
+  it('rechaza si falta analysisData', () => {
+    const { analysisData, ...sinAnalisis } = validPresentationRequest;
+    expect(presentationRequestSchema.safeParse(sinAnalisis).success).toBe(false);
+  });
+
+  it('rechaza si analysisData tiene un shape inválido', () => {
+    const malo = { ...validPresentationRequest, analysisData: { lotes: [{ numero: 1 }] } };
+    expect(presentationRequestSchema.safeParse(malo).success).toBe(false);
+  });
+
+  it('rechaza si falta expediente o título', () => {
+    const { expediente, ...sinExp } = validPresentationRequest;
+    expect(presentationRequestSchema.safeParse(sinExp).success).toBe(false);
+    expect(presentationRequestSchema.safeParse({ ...validPresentationRequest, titulo: '' }).success).toBe(false);
+  });
+
+  it('acepta importe/lotes nulos y fechaLimite ausente', () => {
+    const { fechaLimite, ...sinFecha } = validPresentationRequest;
+    const flexible = { ...sinFecha, importe: null, lotes: null };
+    expect(presentationRequestSchema.safeParse(flexible).success).toBe(true);
   });
 });

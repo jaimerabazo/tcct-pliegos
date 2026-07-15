@@ -1,26 +1,7 @@
 // Semilla de datos demo — mismos 6 expedientes que hoy viven como MOCK_PLIEGOS/MOCK_ANALYSIS
 // en src/App.jsx. Idempotente (upsert por `expediente`): se puede correr varias veces sin duplicar.
 import { pathToFileURL } from 'node:url';
-
-const MESES = { ene: 0, feb: 1, mar: 2, abr: 3, may: 4, jun: 5, jul: 6, ago: 7, sep: 8, oct: 9, nov: 10, dic: 11 };
-
-export function parseShortDate(str) {
-  const [day, mes, year] = (str ?? '').split(' ');
-  const month = MESES[mes];
-  const d = Number(day);
-  const y = Number(year);
-  // "No especificado" (lo que Claude emite cuando el pliego no da fecha) y cualquier
-  // otro string que no encaje con "DD mes AAAA" no es una fecha: devolvemos null
-  // (fechaLimite es nullable) en vez de un Invalid Date, que reventaría el upsert de
-  // Prisma y saldría como un 502 genérico.
-  if (month === undefined || !Number.isInteger(d) || !Number.isInteger(y)) {
-    return null;
-  }
-  // Anclar a medianoche UTC (no local): al persistir el Date se normaliza a UTC,
-  // y una medianoche local en un huso adelantado (p.ej. Madrid UTC+2) se guardaría
-  // como las 22:00Z del día anterior, mostrándose como el día natural previo.
-  return new Date(Date.UTC(y, month, d));
-}
+import { parseShortDate } from '../src/logic.js';
 
 export const MOCK_PLIEGOS = [
   {

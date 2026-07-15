@@ -10,7 +10,7 @@
 // El contenido de las 7 diapositivas centrales se formatea directamente desde
 // `analysisData` (datos ya validados/editados por el usuario, confianza incluida). NO se
 // pasa por Claude para no alterar cifras verificadas. Claude solo aporta el resumen final.
-import { formatEuroFull, formatNumber, formatShortDate, parseShortDate } from '../../src/logic.js';
+import { formatEuroFull, formatNumber } from '../../src/logic.js';
 
 // Orden de las secciones centrales — DEBE coincidir con `SECTIONS` de src/views/Analysis.jsx
 // (el índice que el usuario ve en la vista de análisis).
@@ -33,24 +33,6 @@ const orDash = (v) => {
   if (v === null || v === undefined || v === '') return '—';
   if (Array.isArray(v)) return v.length ? v.join(', ') : '—';
   return String(v);
-};
-
-// Fechas en cualquier shape que usa la app → formato corto ("15 jul 2026"), como en la UI.
-// Prisma/ISO pasan por `new Date`; el string corto de Claude/seed/normalizePliego por
-// `parseShortDate` (new Date("15 jul 2026") es implementation-defined y suele fallar).
-const orDashDate = (v) => {
-  if (v === null || v === undefined || v === '') return '—';
-  if (v instanceof Date) {
-    return Number.isNaN(v.getTime()) ? '—' : formatShortDate(v);
-  }
-  if (typeof v === 'string') {
-    const fromShort = parseShortDate(v);
-    if (fromShort) return formatShortDate(fromShort);
-    const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? '—' : formatShortDate(d);
-  }
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? '—' : formatShortDate(d);
 };
 
 const pct = (n) => (n === null || n === undefined || n === '' ? '—' : `${n}%`);
@@ -193,13 +175,12 @@ const SECTION_BUILDERS = {
 // --- Diapositivas especiales (portada y resumen final) ---
 
 // Misma fuente que el ribbon de Analysis.jsx y la diapositiva Plazos: plazos.limite
-// (editable vía PATCH analysis). pliego.fechaLimite solo como respaldo si no hay análisis.
-function coverCierreOfertas(pliego, analysisData) {
-  const limite = analysisData?.plazos?.limite;
-  if (limite !== null && limite !== undefined && limite !== '') {
-    return orDash(limite);
-  }
-  return orDashDate(pliego.fechaLimite);
+// (editable vía PATCH analysis). Se muestra '—' si está vacío, igual que el resto del
+// deck; NO se cae a pliego.fechaLimite, que mostraría una fecha en portada mientras el
+// ribbon y la diapositiva Plazos enseñan '—'. La portada solo se construye con análisis
+// presente (buildSlideSpecs lo exige), así que no hay caso "sin análisis" que respaldar.
+function coverCierreOfertas(analysisData) {
+  return orDash(analysisData?.plazos?.limite);
 }
 
 function buildCoverSpec(pliego, analysisData, tagline) {
@@ -216,7 +197,7 @@ function buildCoverSpec(pliego, analysisData, tagline) {
       { label: 'Lotes', value: String(formatNumber(pliego.lotes)) },
       { label: 'Procedimiento', value: orDash(r.procedimiento) },
       { label: 'ENS', value: orDash(m.ens) },
-      { label: 'Cierre de ofertas', value: coverCierreOfertas(pliego, analysisData) },
+      { label: 'Cierre de ofertas', value: coverCierreOfertas(analysisData) },
     ],
   };
 }

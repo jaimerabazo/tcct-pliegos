@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   estimateBlockHeight,
+  estimateBulletItemHeights,
   estimateKeyValueRowHeights,
   estimateParagraphTextHeight,
   estimateTableRowHeights,
@@ -170,6 +171,59 @@ describe('estimateBlockHeight — keyvalue', () => {
       0,
     );
     expect(rowCount).toBe(8);
+  });
+});
+
+describe('estimateBlockHeight — bullets', () => {
+  const BULLET_ITEM_H = 0.34;
+
+  it('grows bullet height when a long item wraps beyond one line', () => {
+    const shortBullets = {
+      type: 'bullets',
+      items: ['Kickoff', 'Fin de transición', 'Revisión SLA'],
+    };
+    const longBullets = {
+      type: 'bullets',
+      items: [
+        'Kickoff',
+        'Continuidad operativa garantizada mediante equipos STS distribuidos en tres áreas de actuación con cobertura 24x7 y tiempos de respuesta comprometidos por SLA para todos los sistemas críticos de la Gerencia de Informática de la Seguridad Social. '.repeat(2),
+        'Revisión SLA',
+      ],
+    };
+
+    expect(estimateBlockHeight(shortBullets)).toBe(shortBullets.items.length * BULLET_ITEM_H);
+    expect(estimateBlockHeight(longBullets)).toBeGreaterThan(longBullets.items.length * BULLET_ITEM_H);
+    expect(estimateBulletItemHeights(longBullets)[1]).toBeGreaterThan(BULLET_ITEM_H);
+    expect(estimateBulletItemHeights(longBullets)[0]).toBe(BULLET_ITEM_H);
+  });
+
+  it('paginates a final-slide bullets block before long items overlap the footer', () => {
+    // Diapositiva final: titulares largos que en PowerPoint se envuelven a 2–3 líneas.
+    const longItem = 'Oportunidad estratégica para TCCT de consolidar su posición como partner integral de ciberseguridad en el sector público, con foco en continuidad operativa y cumplimiento del ENS Alto.';
+    const bullets = {
+      type: 'bullets',
+      heading: 'Claves del expediente',
+      items: Array(12).fill(longItem),
+    };
+
+    const oldEstimate = bullets.items.length * BULLET_ITEM_H;
+    // Con el modelo antiguo (1 línea/ítem) el bloque parecía caber holgadamente.
+    expect(BODY_TOP + oldEstimate).toBeLessThanOrEqual(BODY_BOTTOM);
+
+    const pages = paginateBlocks([bullets]);
+
+    pages.forEach((page) => expect(fitsOnPage(page)).toBe(true));
+    expect(estimateBlockHeight(bullets)).toBeGreaterThan(oldEstimate);
+    expect(pages.length).toBeGreaterThan(1);
+
+    // Ningún ítem se pierde al trocear en páginas "(cont.)".
+    const itemCount = pages.reduce(
+      (acc, page) => acc + page
+        .filter(({ block }) => block.type === 'bullets')
+        .reduce((sum, { block }) => sum + block.items.length, 0),
+      0,
+    );
+    expect(itemCount).toBe(12);
   });
 });
 

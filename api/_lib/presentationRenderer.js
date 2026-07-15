@@ -24,7 +24,12 @@ const KV_LABEL_W = 2.6;
 const KV_VALUE_GAP = 0.2;
 const KV_ROW_MIN_H = 0.42;
 const KV_ROW_GAP = 0.04;
-const BULLET_ITEM_H = 0.34;
+const BULLET_ITEM_H = 0.34; // altura mínima de un ítem de una sola línea (incluye separación)
+const BULLET_FONT_SIZE = 12;
+const BULLET_LINE_SPACING = 1.15;
+const BULLET_LINE_H = (BULLET_FONT_SIZE * BULLET_LINE_SPACING) / 72;
+const BULLET_ITEM_PAD = BULLET_ITEM_H - BULLET_LINE_H; // separación entre ítems, sobre la 1ª línea
+const BULLET_INDENT_W = 0.3; // sangría de la viñeta descontada del ancho útil para el wrap
 const PARAGRAPH_FONT_SIZE = 12;
 const PARAGRAPH_LINE_SPACING = 1.2;
 const PARAGRAPH_LINE_H = (PARAGRAPH_FONT_SIZE * PARAGRAPH_LINE_SPACING) / 72;
@@ -100,6 +105,25 @@ function wrapTextToLines(text, maxCharsPerLine) {
 function estimateParagraphTextHeight(text) {
   const lineCount = wrapTextToLines(text, charsPerLine()).length;
   return Math.max(PARAGRAPH_MIN_H, lineCount * PARAGRAPH_LINE_H);
+}
+
+// Los ítems largos (frecuentes en la diapositiva final) se envuelven en varias líneas en
+// PowerPoint. Estimamos la altura por líneas envueltas, como tablas/keyvalue/párrafos, en
+// vez de asumir una línea por ítem — si no, la paginación los daría por cabidos y se
+// solaparían con el pie.
+function estimateBulletItemHeight(item) {
+  const width = CONTENT_W - BULLET_INDENT_W;
+  const lineCount = wrapTextToLines(item, charsPerLine(width, BULLET_FONT_SIZE)).length;
+  return Math.max(BULLET_ITEM_H, lineCount * BULLET_LINE_H + BULLET_ITEM_PAD);
+}
+
+function estimateBulletItemHeights(block) {
+  return block.items.map(estimateBulletItemHeight);
+}
+
+function estimateBulletsBlockHeight(block) {
+  const headH = block.heading ? BLOCK_HEADING_H : 0;
+  return headH + estimateBulletItemHeights(block).reduce((acc, h) => acc + h, 0);
 }
 
 function tableColumnWidths(columnCount) {
@@ -239,7 +263,7 @@ function estimateBlockHeight(block) {
   const headH = block.heading ? BLOCK_HEADING_H : 0;
   if (block.type === 'table') return estimateTableBlockHeight(block);
   if (block.type === 'keyvalue') return estimateKeyValueBlockHeight(block);
-  if (block.type === 'bullets') return headH + block.items.length * BULLET_ITEM_H;
+  if (block.type === 'bullets') return estimateBulletsBlockHeight(block);
   if (block.type === 'paragraph') return headH + estimateParagraphTextHeight(block.text);
   return 0.5;
 }
@@ -332,7 +356,15 @@ function splitKeyValueBlock(block, maxHeight, showHeading = true) {
 
 function splitBulletsBlock(block, maxHeight, showHeading = true) {
   const headingH = showHeading && block.heading ? BLOCK_HEADING_H : 0;
-  const maxItems = Math.floor((maxHeight - headingH) / BULLET_ITEM_H);
+  const itemHs = estimateBulletItemHeights(block);
+  let used = headingH;
+  let maxItems = 0;
+  for (let i = 0; i < block.items.length; i++) {
+    const next = used + itemHs[i];
+    if (next > maxHeight) break;
+    used = next;
+    maxItems += 1;
+  }
   if (maxItems >= block.items.length) {
     return { chunk: block, remainder: null };
   }
@@ -488,13 +520,14 @@ function renderBulletsBlock(pptx, slide, block, y) {
       x: M, y: cursor, w: CONTENT_W, h: 0.35,
       fontFace: FONT.display, fontSize: 14, color: PPT.blue, bold: true,
     });
-    cursor += 0.42;
+    cursor += BLOCK_HEADING_H;
   }
+  const itemsH = estimateBulletItemHeights(block).reduce((acc, h) => acc + h, 0);
   slide.addText(
     block.items.map((it) => ({ text: it, options: { bullet: { indent: 15 }, color: PPT.navy } })),
     {
-      x: M, y: cursor, w: CONTENT_W, h: block.items.length * 0.34,
-      fontFace: FONT.body, fontSize: 12, valign: 'top', lineSpacingMultiple: 1.15,
+      x: M, y: cursor, w: CONTENT_W, h: itemsH,
+      fontFace: FONT.body, fontSize: BULLET_FONT_SIZE, valign: 'top', lineSpacingMultiple: BULLET_LINE_SPACING,
     },
   );
 }
@@ -582,6 +615,7 @@ export async function renderPptx(specs, { expediente } = {}) {
 
 export {
   estimateBlockHeight,
+  estimateBulletItemHeights,
   estimateKeyValueRowHeights,
   estimateParagraphTextHeight,
   estimateTableRowHeights,

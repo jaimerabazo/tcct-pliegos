@@ -102,46 +102,16 @@ describe('buildSlideSpecs — portada', () => {
     expect(cierre.value).toBe('20 de agosto de 2026, 12:00');
   });
 
-  it('formatea fechaLimite en corto como respaldo si plazos.limite está vacío', () => {
+  it('muestra "—" si plazos.limite está vacío, igual que el ribbon y la diapositiva Plazos (no cae a pliego.fechaLimite)', () => {
     const noPlazos = { ...analysisData, plazos: {} };
-    const isoPliego = { ...pliego, fechaLimite: '2026-07-15T00:00:00.000Z' };
-    const datePliego = { ...pliego, fechaLimite: new Date(Date.UTC(2026, 6, 15)) };
-    const cierreIso = build({ pliego: isoPliego, analysisData: noPlazos })[0].meta.find((m) => m.label === 'Cierre de ofertas');
-    const cierreDate = build({ pliego: datePliego, analysisData: noPlazos })[0].meta.find((m) => m.label === 'Cierre de ofertas');
-    expect(cierreIso.value).toBe('15 jul 2026');
-    expect(cierreDate.value).toBe('15 jul 2026');
-  });
-
-  it('formatea fechaLimite en corto cuando ya llega como string UI (respaldo sin plazos.limite)', () => {
-    const noPlazos = { ...analysisData, plazos: {} };
-    const shortPliego = { ...pliego, fechaLimite: '15 jul 2026' };
-    const paddedPliego = { ...pliego, fechaLimite: '06 jul 2026' };
-    const cierre = build({ pliego: shortPliego, analysisData: noPlazos })[0].meta.find((m) => m.label === 'Cierre de ofertas');
-    const cierrePadded = build({ pliego: paddedPliego, analysisData: noPlazos })[0].meta.find((m) => m.label === 'Cierre de ofertas');
-    expect(cierre.value).toBe('15 jul 2026');
-    expect(cierrePadded.value).toBe('06 jul 2026');
-  });
-
-  it('no depende de que new Date parsee el string corto en el respaldo (entornos sin locale español)', () => {
-    const noPlazos = { ...analysisData, plazos: {} };
-    const realDate = Date;
-    // Simula Node/Linux donde new Date("15 jul 2026") devuelve Invalid Date.
-    global.Date = class extends realDate {
-      constructor(...args) {
-        if (args.length === 1 && args[0] === '15 jul 2026') {
-          super(NaN);
-          return;
-        }
-        super(...args);
-      }
-    };
-    try {
-      const cierre = build({ pliego: { ...pliego, fechaLimite: '15 jul 2026' }, analysisData: noPlazos })[0].meta
-        .find((m) => m.label === 'Cierre de ofertas');
-      expect(cierre.value).toBe('15 jul 2026');
-    } finally {
-      global.Date = realDate;
-    }
+    // Aunque el pliego tenga una fechaLimite en cabecera, la portada NO debe mostrarla:
+    // sería incoherente con el ribbon de Analysis y la diapositiva Plazos, que enseñan "—".
+    const pliegoConFecha = { ...pliego, fechaLimite: '15 jul 2026' };
+    const specs = build({ pliego: pliegoConFecha, analysisData: noPlazos });
+    const cierre = specs[0].meta.find((m) => m.label === 'Cierre de ofertas');
+    const limitePlazos = specs[7].blocks[0].rows.find((r) => r.label === 'Límite de presentación');
+    expect(cierre.value).toBe('—');
+    expect(cierre.value).toBe(limitePlazos.value);
   });
 });
 

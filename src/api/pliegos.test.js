@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { normalizePliego, listPliegos, analyzePdf, updatePliego, updateAnalysis } from './pliegos.js';
+import { normalizePliego, listPliegos, analyzePdf, updatePliego, updateAnalysis, generatePresentation, downloadBlob } from './pliegos.js';
 
 function mockFetchOnce({ ok = true, status = 200, body }) {
   global.fetch = vi.fn().mockResolvedValue({
@@ -111,5 +111,99 @@ describe('updateAnalysis', () => {
   it('propaga el error del servidor', async () => {
     mockFetchOnce({ ok: false, status: 400, body: { error: 'Datos de análisis inválidos.' } });
     await expect(updateAnalysis('a', {})).rejects.toThrow('Datos de análisis inválidos.');
+  });
+});
+
+// Mock de fetch para respuestas binarias (.pptx): expone blob() y headers.get().
+function mockFetchBinary({ ok = true, status = 200, blob, disposition = null, errorBody } = {}) {
+  global.fetch = vi.fn().mockResolvedValue({
+    ok,
+    status,
+    blob: async () => blob,
+    json: async () => errorBody,
+    headers: { get: (k) => (k === 'Content-Disposition' ? disposition : null) },
+  });
+}
+
+describe('generatePresentation', () => {
+  const pliego = { id: 'a', expediente: '2026/7008', analysisData: { resumen: {} } };
+
+  it('devuelve { blob, filename } usando el nombre de Content-Disposition', async () => {
+    const blob = new Blob(['pptx-bytes']);
+    mockFetchBinary({ blob, disposition: 'attachment; filename="Presentacion_2026-7008.pptx"' });
+    const result = await generatePresentation(pliego);
+    expect(result.blob).toBe(blob);
+    expect(result.filename).toBe('Presentacion_2026-7008.pptx');
+    expect(global.fetch).toHaveBeenCalledWith('/api/pliegos/a/presentation', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('manda el pliego completo en el body', async () => {
+    mockFetchBinary({ blob: new Blob(['x']), disposition: 'attachment; filename="f.pptx"' });
+    await generatePresentation(pliego);
+    const [, opts] = global.fetch.mock.calls[0];
+    expect(JSON.parse(opts.body)).toEqual(pliego);
+  });
+
+  it('cae a un nombre derivado del expediente si no hay Content-Disposition', async () => {
+    mockFetchBinary({ blob: new Blob(['x']), disposition: null });
+    const result = await generatePresentation(pliego);
+    expect(result.filename).toBe('Presentacion_2026-7008.pptx');
+  });
+
+  it('cae al nombre por expediente si el Content-Disposition no trae filename', async () => {
+    mockFetchBinary({ blob: new Blob(['x']), disposition: 'attachment' });
+    const result = await generatePresentation(pliego);
+    expect(result.filename).toBe('Presentacion_2026-7008.pptx');
+  });
+
+  it('usa "pliego" como nombre si el pliego no tiene expediente', async () => {
+    mockFetchBinary({ blob: new Blob(['x']), disposition: null });
+    const result = await generatePresentation({ id: 'a', analysisData: {} });
+    expect(result.filename).toBe('Presentacion_pliego.pptx');
+  });
+
+  it('propaga el error JSON del servidor cuando la respuesta no es ok', async () => {
+    mockFetchBinary({ ok: false, status: 502, errorBody: { error: 'Claude ha fallado.' } });
+    await expect(generatePresentation(pliego)).rejects.toThrow('Claude ha fallado.');
+  });
+
+  it('usa un mensaje de fallback si el error no trae cuerpo JSON', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false, status: 500,
+      json: async () => { throw new Error('not json'); },
+    });
+    await expect(generatePresentation(pliego)).rejects.toThrow(/HTTP 500/);
+  });
+});
+
+describe('downloadBlob', () => {
+  it('crea un <a download> con el nombre dado, lo dispara y difiere la limpieza', async () => {
+    global.URL.createObjectURL = vi.fn(() => 'blob:fake-url');
+    global.URL.revokeObjectURL = vi.fn();
+    const created = [];
+    const realCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const el = realCreate(tag);
+      created.push(el);
+      return el;
+    });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    downloadBlob(new Blob(['x']), 'Presentacion_2026-7008.pptx');
+
+    const anchor = created.find((el) => el.tagName === 'A');
+    expect(anchor).toBeTruthy();
+    expect(anchor.download).toBe('Presentacion_2026-7008.pptx');
+    expect(anchor.href).toContain('blob:fake-url');
+    expect(clickSpy).toHaveBeenCalled();
+    expect(global.URL.createObjectURL).toHaveBeenCalled();
+    // El click es síncrono; la limpieza (remove + revoke) se difiere para no abortar la descarga.
+    expect(global.URL.revokeObjectURL).not.toHaveBeenCalled();
+    expect(document.body.contains(anchor)).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake-url');
+    expect(document.body.contains(anchor)).toBe(false);
   });
 });

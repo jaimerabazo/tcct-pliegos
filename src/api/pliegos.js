@@ -65,3 +65,46 @@ export async function updateAnalysis(id, analysisData) {
   });
   return normalizePliego(await jsonOrThrow(res, 'No se ha podido actualizar el análisis'));
 }
+
+// Extrae el nombre de archivo de la cabecera Content-Disposition del servidor.
+function filenameFromDisposition(header) {
+  if (!header) return null;
+  const match = /filename="?([^"]+)"?/.exec(header);
+  return match ? match[1] : null;
+}
+
+// Genera la presentación PowerPoint del pliego. A diferencia del resto de endpoints,
+// la respuesta es un binario (.pptx), no JSON: en éxito devuelve { blob, filename } para
+// que el llamante dispare la descarga; en error el servidor sí responde JSON con { error }.
+// Manda el pliego cacheado (cabecera + analysisData) en el body — el endpoint no relee la BD.
+export async function generatePresentation(pliego) {
+  const res = await fetch(`/api/pliegos/${pliego.id}/presentation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(pliego),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || `El servidor ha respondido con un error (HTTP ${res.status}).`);
+  }
+  const blob = await res.blob();
+  const expedienteSafe = (pliego.expediente || 'pliego').replace(/[^\w.-]+/g, '-');
+  const filename = filenameFromDisposition(res.headers.get('Content-Disposition')) || `Presentacion_${expedienteSafe}.pptx`;
+  return { blob, filename };
+}
+
+// Dispara la descarga de un Blob en el navegador (crea un <a download> temporal).
+// El revoke se difiere: en algunos navegadores (Safari/WebKit) revocar la object URL
+// de forma síncrona tras click() aborta la descarga antes de que empiece a leerla.
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
+}

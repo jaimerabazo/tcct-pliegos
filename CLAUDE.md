@@ -41,6 +41,11 @@
 | **`analysisData` como columna JSON, sin normalizar en tablas** | Minimiza la reescritura del shape que ya consume `Analysis`; se normaliza más adelante solo si hace falta analítica cruzada entre pliegos. |
 | **CI con GitHub Actions** | Convierte el umbral de cobertura ≥90% en un gate real en push/PR a `main`/`develop`, no una norma verbal. |
 | **Paleta centralizada en `src/theme.js` + rebrand visual** | Los hex sueltos por componente se centralizan en un objeto JS único. De paso se sustituye la paleta TT corporativa original (azul #0066FF, sidebar clara) por una paleta más oscura (sidebar #111827, azul #2563EB) — el propio `theme.js` la etiqueta como "diseño Claude Design (jul 2026)". Pendiente de validar con JC si esto reemplaza definitivamente la decisión de "Estilo Telefónica Tech corporativo" de la fila de arriba. |
+| **Exportación a PowerPoint (`.pptx`) en vez de Excel primero** | Se prioriza generar la presentación de Comité de Ofertas (portada + 7 secciones del índice + resumen final) sobre el export a Excel. El botón "Exportar a Excel" se mantiene en la toolbar pero sigue sin cablear (backlog). "Generar presentación" sustituye al antiguo botón "Generar borrador RFP". |
+| **PPTX: solo el resumen final pasa por Claude; las 7 secciones se formatean desde `analysisData`** | Los datos ya validados/editados por el humano (con su confianza) NO se re-generan con el LLM para no alterar cifras verificadas. Claude solo sintetiza lo que no existe: tagline de portada + conclusiones (titulares/puntos fuertes/riesgos/recomendación). Menos coste, menos latencia, cero riesgo de "tocar" importes revisados. |
+| **PPTX con paleta TT corporativa (no `theme.js`)** | La presentación es material de cara a cliente/comité, así que usa la identidad "Telefónica Tech corporativo" (azul #0066FF, navy #001B4B) en `api/_lib/presentationTheme.js`, deliberadamente independiente de la paleta oscura "Claude Design" del producto (`src/theme.js`, aún sin validar con JC). Fuentes seguras de Office (Arial/Calibri/Consolas), no las Google Fonts del frontend (no garantizadas en el PowerPoint del receptor). |
+| **`pptxgenjs` fijado en 3.12.0 (no 4.x)** | La 4.x publica su entrada como ESM (`pptxgen.es.js`) que el bundler de Vercel carga como CommonJS → crash de carga `Cannot use import statement outside a module` (HTTP 500 sin body). Además 4.x exige Node ≥22 (Vercel corre 20). La 3.12.0 es CJS-nativa (`main: dist/pptxgen.cjs.js`), soporta Node 20 y tiene la misma API que usa el renderer. |
+| **Endpoint PPTX recibe el pliego en el body (no relee la BD)** | Decisión de eficiencia: el frontend ya tiene el pliego cacheado (cabecera + `analysisData`) en TanStack Query y lo manda en el POST. Así la función serverless no necesita Prisma ni `DATABASE_URL` — más ligera y rápida. Se valida el body de forma defensiva (`presentationRequestSchema`). |
 
 ---
 
@@ -81,9 +86,17 @@
 - Dos fixes menores incluidos: badge de certificaciones en `Analysis.jsx` usaba una variable `key={cpv}`/`{c}` equivocada (mostraba vacío/rompía key), corregido a `key={cert}`/`{cert}`; el delta del `KpiCard` en `Dashboard.jsx` pintaba siempre en verde, ahora es rojo si empieza por "-".
 - No se han tocado tests para este PR — cambio puramente visual, sin lógica nueva que cubrir.
 
-**Pendiente inmediato**: backlog corto plazo (vista de comparativa, ajustar mocks del seed, exportación Excel). Siguiente caso de uso prioritario: generador de borrador RFP (§11).
+**Feature "Generar presentación PowerPoint" — completado** (rama `feat/presentation`, 15/07/2026):
+- Botón **"Generar presentación"** en la toolbar de `Analysis` (sustituye al antiguo "Generar borrador RFP"; "Exportar a Excel" se mantiene sin cablear). Analiza el pliego → clic → descarga un `.pptx` corporativo en local. Deshabilitado si el pliego no tiene `analysisData`; spinner mientras trabaja; banner de error si falla.
+- **Estructura de 9 diapositivas**: portada + las 7 secciones del índice de `Analysis` (mismo orden que `SECTIONS`) + resumen final. Las 7 centrales se formatean directo desde `analysisData`; la portada (tagline) y el resumen final (titulares/puntos fuertes/riesgos/recomendación) los genera Claude — ver §3.
+- **Backend** (`api/pliegos/[id]/presentation.js`, `POST`): valida el body (`presentationRequestSchema`), llama a Claude (`max_tokens: 2000`, `output_config.json_schema`) solo para la síntesis, valida con `presentationContentSchema`, construye el deck y responde el binario (`Content-Type` pptx + `Content-Disposition: attachment`). Sin Prisma (el pliego viaja en el body). `maxDuration: 60` en `vercel.json`.
+- **Lógica separada**: `api/_lib/presentationBuilder.js` (`buildSlideSpecs`, PURA, testeada) vs `api/_lib/presentationRenderer.js` (`renderPptx` con pptxgenjs, IO, sin test unit — mismo criterio que el handler de `analyze.js`). Paleta/fuentes en `api/_lib/presentationTheme.js` (TT corporativa, ver §3/§6). El renderer pagina bloques (tablas/listas largas continúan en diapositivas "(cont.)") estimando alturas de wrap.
+- **Tests**: `buildSlideSpecs` + `presentationContentSchema`/`presentationRequestSchema` (Zod) + cliente `generatePresentation`/`downloadBlob` + integración del botón en `Analysis.test.jsx`. **206 tests**, cobertura por encima del umbral.
+- **Bug de despliegue resuelto**: `pptxgenjs` 4.x crasheaba al cargarse en Vercel (ESM cargado como CJS → HTTP 500 sin body); fijado en **3.12.0** (CJS-nativo, Node 20). Ver §3.
 
-**Aviso registrado**: URL de Vercel es pública por defecto. Ahora que la extracción es real (aunque sea con archivos de prueba), conviene activar Vercel Password Protection o SSO antes de compartir la URL ampliamente. Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar.
+**Pendiente inmediato**: backlog corto plazo (vista de comparativa, ajustar mocks del seed, filtro de pliegos en dashboard, exportación Excel real). **Siguiente iniciativa prioritaria: autenticación + control de acceso** (ver §14) — pasa a ser prerrequisito bloqueante porque el equipo usará la app con expedientes reales en semanas.
+
+**Aviso registrado**: URL de Vercel es pública por defecto. Con datos reales entrando y el equipo a punto de acceder, hay que activar Vercel Password Protection/SSO **ya** (medida puente) y construir auth real (§14). Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar (mitigar vía Supabase Storage al abordar el auth).
 
 ---
 
@@ -96,12 +109,13 @@ TanStack Query 5 estado de servidor (fetch/cache/invalidación) en el frontend
 Tailwind CSS 3   styling utility-first
 lucide-react     iconografía outline
 Google Fonts     Space Grotesk + Inter + JetBrains Mono
+pptxgenjs 3.12   generación de .pptx en el backend (fijado en 3.x, ver §3 — 4.x crashea en Vercel)
 Vitest 4         test runner (+ @testing-library/react, jsdom)
 ```
 
 **Testing**: `npm run test` (una vez), `npm run test:watch`, `npm run test:coverage`. La lógica de negocio pura vive en `src/logic.js` (formateo, `computeDashboardKpis`, `getLotesSumMismatch`) con tests en `src/logic.test.js` — umbral de cobertura ≥90% (líneas/funciones/branches/statements) configurado en `vitest.config.js`, acotado a `src/logic.js` + `src/api/pliegos.js` + `api/_lib/schemas.js` + los handlers de `api/pliegos/*` (`coverage.include`). Regla acordada con Jaime: **toda feature nueva debe llevar tests con ≥90% de cobertura** de su lógica; se amplía el `include` según se vayan cubriendo más partes. Patrón de testing para el backend: inyección del cliente Prisma por parámetro (nunca `vi.mock`), con un doble en memoria en `api/_lib/testFakePrisma.js` — ver §10 Fase 2 para el detalle. `src/views/Dashboard.test.jsx` y `src/views/Analysis.test.jsx` son tests de integración ligeros con React Testing Library (no cuentan para el umbral, son un plus). **CI** (`.github/workflows/ci.yml`): gate automático en push/PR a `main`/`develop`.
 
-**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.create()` con `output_config.format: json_schema` para la extracción, valida el resultado con Zod (`api/_lib/schemas.js`) y lo persiste (`prisma.pliego.upsert` por `expediente`). Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. API REST completa en `api/pliegos/` (listar, obtener, actualizar cabecera, actualizar análisis) — ver §10 Fase 2. El frontend consume estos endpoints vía TanStack Query (`src/App.jsx` + `src/api/pliegos.js`).
+**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.create()` con `output_config.format: json_schema` para la extracción, valida el resultado con Zod (`api/_lib/schemas.js`) y lo persiste (`prisma.pliego.upsert` por `expediente`). Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. API REST completa en `api/pliegos/` (listar, obtener, actualizar cabecera, actualizar análisis, **generar presentación**) — ver §10 Fase 2 y el feature PPTX de §4. El frontend consume estos endpoints vía TanStack Query (`src/App.jsx` + `src/api/pliegos.js`). **Ningún endpoint tiene aún control de acceso** — es la próxima iniciativa (§14).
 
 **Base de datos**: Supabase (Postgres) + Prisma 7 (`prisma/schema.prisma`, modelo único `Pliego` con `analysisData Json?`). Un par de cosas no obvias de Prisma 7 que costó descubrir, para no volver a perder tiempo:
 - **La conexión "Direct" de Supabase es IPv6-only** (sin registro DNS A, solo AAAA) salvo que pagues el add-on de IPv4 — inalcanzable desde Vercel y desde muchos entornos de desarrollo. Hay que usar el **connection pooler** (Supabase dashboard → Settings → Database → "Session pooler", host `*.pooler.supabase.com`, puerto 5432) como `DATABASE_URL`.
@@ -185,11 +199,16 @@ tcct-pliegos/
 │   │   ├── [id].test.js
 │   │   └── [id]/
 │   │       ├── analysis.js     PATCH /api/pliegos/[id]/analysis (actualizar analysisData)
-│   │       └── analysis.test.js
+│   │       ├── analysis.test.js
+│   │       └── presentation.js POST /api/pliegos/[id]/presentation (genera y devuelve el .pptx; sin test unit, IO)
 │   └── _lib/
 │       ├── prisma.js           Cliente Prisma singleton (driver adapter @prisma/adapter-pg)
-│       ├── schemas.js          Schemas Zod (pliegoPatchSchema, analysisDataSchema, pliegoFromAnalysisSchema)
+│       ├── schemas.js          Schemas Zod (pliegoPatchSchema, analysisDataSchema, pliegoFromAnalysisSchema, presentationRequestSchema, presentationContentSchema)
 │       ├── schemas.test.js
+│       ├── presentationBuilder.js       PURA: buildSlideSpecs(pliego, analysisData, tagline, resumenFinal) → specs de diapositiva
+│       ├── presentationBuilder.test.js
+│       ├── presentationRenderer.js      IO: renderPptx(specs) con pptxgenjs (sin test unit) + paginación de bloques
+│       ├── presentationTheme.js         paleta TT corporativa + fuentes Office para el .pptx (independiente de src/theme.js)
 │       ├── testFakePrisma.js   Doble en memoria de PrismaClient para tests (findMany/findUnique/update/create/upsert)
 │       └── testFakeRes.js      Doble mínimo del objeto `res` de Vercel para tests
 ├── prisma/
@@ -199,7 +218,8 @@ tcct-pliegos/
 │   └── migrations/
 ├── prisma.config.ts            Config de la CLI de Prisma (lee .env.local)
 ├── index.html                  Carga Google Fonts en <head>
-├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, @anthropic-ai/sdk, prisma, zod
+├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, @anthropic-ai/sdk, prisma, zod, pptxgenjs 3.12
+├── vercel.json                 maxDuration por función (analyze.js 300s, presentation.js 60s)
 ├── vite.config.js              plugin-react
 ├── tailwind.config.js          extend con paleta tt-*
 ├── postcss.config.js           tailwind + autoprefixer
@@ -212,7 +232,7 @@ tcct-pliegos/
     ├── theme.js                paleta de colores centralizada (tokens), importada por componentes y vistas
     ├── index.css               @tailwind directives + @keyframes pulse + @keyframes indeterminate
     ├── logic.js                lógica pura (formateo, computeDashboardKpis, getLotesSumMismatch) + tests
-    ├── api/pliegos.js          cliente fetch (listPliegos, analyzePdf, updatePliego, updateAnalysis) + normalización de fechas
+    ├── api/pliegos.js          cliente fetch (listPliegos, analyzePdf, updatePliego, updateAnalysis, generatePresentation, downloadBlob) + normalización de fechas
     ├── components/             Sidebar, StatusBadge, UploadModal, section.jsx, fields.jsx
     ├── views/                  Dashboard.jsx, Analysis.jsx (presentacionales) + sus *.test.jsx
     └── generated/prisma/       Cliente Prisma generado (gitignored, se regenera con `prisma generate`/postinstall)
@@ -224,6 +244,8 @@ tcct-pliegos/
 - Valida la respuesta con `pliegoFromAnalysisSchema`/`analysisDataSchema` (Zod, defensa en profundidad) y la persiste con `persistAnalysis()` (`prisma.pliego.upsert` por `expediente` — reanalizar el mismo expediente actualiza, no duplica). Devuelve la fila persistida (con `id` real de la BD) o `{ error }`. No usa Files API; el PDF viaja en base64 en la misma request a Claude.
 
 **`api/pliegos/*`**: cada handler exporta su lógica núcleo recibiendo el cliente Prisma por parámetro (`listPliegos(client)`, `getPliego(client, id)`, `updatePliego(client, id, patch)`, `updateAnalysis(client, id, analysisData)`) y el `handler` por defecto acepta un tercer argumento opcional `client = prisma` — así los tests inyectan el doble de `api/_lib/testFakePrisma.js` sin `vi.mock` (Vercel siempre llama con 2 argumentos, así que en producción cae al singleton real). `PATCH` valida el body con los schemas Zod correspondientes antes de tocar la BD; un `P2025` de Prisma (registro no encontrado) se traduce a 404.
+
+**`api/pliegos/[id]/presentation.js`** (`POST`, `maxDuration: 60`): genera el `.pptx`. **No usa Prisma** — el frontend manda su pliego cacheado (cabecera + `analysisData`) en el body y se valida con `presentationRequestSchema`. Llama a Claude (`max_tokens: 2000`, `output_config.json_schema` = gemelo JSON Schema de `presentationContentSchema`) SOLO para tagline + resumen final, valida la respuesta, construye las specs con `buildSlideSpecs` (`api/_lib/presentationBuilder.js`, pura) y las renderiza con `renderPptx` (`api/_lib/presentationRenderer.js`, pptxgenjs). Responde el binario (`Content-Type` pptx + `Content-Disposition: attachment`); en error responde JSON `{ error }` (405/400/502, y 500 solo si falta `ANTHROPIC_API_KEY`). El cliente `generatePresentation` (`src/api/pliegos.js`) devuelve `{ blob, filename }` y `downloadBlob` dispara la descarga (revoke diferido para no abortarla en Safari).
 
 **Frontend** (tras la Fase 3, ya no es un único archivo):
 - `src/App.jsx` — shell: `useQuery(['pliegos'], listPliegos)` como única fuente de verdad, `useMutation` para editar cabecera/análisis (invalidan la query), navegación `view`/`selectedId`, y estados de carga/error de la lista. Baja datos + callbacks a las vistas por props.
@@ -279,6 +301,7 @@ npm run build
 **Corto plazo (iteración de mockup)**:
 - [x] Modal de upload con drag & drop del PDF — valida que sea PDF, llama a `/api/analyze` de verdad y navega al análisis persistido.
 - [ ] Ajustar los mock del 2026/7008 con datos más cercanos a los reales de Jaime.
+- [ ] Filtro/búsqueda de pliegos en el dashboard (mencionado por Jaime, para más adelante).
 - [ ] ~~Vista de comparativa entre dos pliegos.~~ Aparcada mientras se trabaja `feat/connect-api`; retomar después.
 - [x] Histograma de importes por organismo en dashboard — barras horizontales (una por organismo, agregando `importe` si se repite), ordenadas de mayor a menor, bajo la tabla de expedientes.
 - [x] KPI "Tiempo medio de extracción" sustituida por "Importe medio" (junto a "Importe agregado"), por ser más accionable para presales.
@@ -291,11 +314,12 @@ npm run build
 - [x] Backend mínimo (Vercel Functions) para no exponer la API key — hecho.
 - [x] Persistencia de análisis (Supabase/Postgres + Prisma + API REST + frontend conectado) — iniciativa "full-stack sólido" completada.
 - [x] CI con tests y cobertura como gate (GitHub Actions).
-- [ ] Exportación real a Excel (SheetJS/xlsx).
-- [ ] Revisar el límite de ~4.5MB de payload de las Vercel Functions si da problemas con pliegos reales grandes/escaneados (alternativa: subida directa navegador→Anthropic Files API o almacenamiento intermedio).
+- [x] **Exportación a PowerPoint** (`.pptx`) — feature completado (ver §4/§3), sustituye en prioridad al export a Excel.
+- [ ] Exportación real a Excel (SheetJS/xlsx) — botón presente sin cablear; se retoma después del auth.
+- [ ] Revisar el límite de ~4.5MB de payload de las Vercel Functions si da problemas con pliegos reales grandes/escaneados (alternativa: subida directa navegador→Anthropic Files API o almacenamiento intermedio; encaja con Supabase Storage al abordar el auth, §14).
 
 **Largo plazo (institucionalización)**:
-- [ ] SSO Telefónica.
+- [ ] SSO Telefónica — **adelantado**: la autenticación pasa a ser la próxima iniciativa (§14), no largo plazo.
 - [ ] Subdominio corporativo TCCT.
 - [ ] Integración con Salesforce (auto-abrir análisis al recibir el pliego en un caso).
 - [ ] Integración con Outlook / Power Automate (trigger cuando llega correo del organismo).
@@ -343,4 +367,18 @@ Los 5 bloques del flujo TCCT y los cuellos de botella identificados (por si el p
 
 ---
 
-*Última actualización: 14/07/2026 · Iniciativa "full-stack sólido" completada (4 fases mergeadas a `main`) + retoque visual PR #13 (paleta centralizada en `theme.js`, sidebar oscura). El producto extrae, persiste y edita pliegos contra Supabase con CI activo. Siguiente foco: backlog corto plazo o generador de borrador RFP (§11).*
+## 14. Próxima iniciativa: autenticación + control de acceso (demo → producto)
+
+**Decisión (15/07/2026)**: el proyecto deja de ser demo. El equipo de presales lo usará en **semanas** y van a entrar **expedientes reales con datos sensibles ya**. Consecuencia: la **autenticación pasa a ser prerrequisito bloqueante** antes de añadir más features — hoy ningún endpoint tiene control de acceso y la URL de Vercel es pública, así que cualquiera con el enlace puede leer/editar/borrar todos los pliegos.
+
+**Plan por fases** (a implementar como iniciativa propia, estilo "full-stack sólido"):
+- **Fase 0 — cerrar la puerta ya** (config, lo hace Jaime en el dashboard de Vercel, no es código): activar Vercel Authentication / Password Protection como medida puente antes de subir el primer pliego real.
+- **Fase 1 — auth real con Supabase Auth** (ya se eligió Supabase "por dar Auth de serie para más adelante", §3): identidad de usuario, `userId`/`teamId` + `createdBy`/`updatedBy` en `Pliego` (da también audit trail de quién validó cada campo editado), y proteger **cada** endpoint (`/api/pliegos/*`, `/api/analyze`, `/api/.../presentation`). Modelo probable: **workspace compartido de equipo** (colaboran en ofertas) con identidad para auditoría, no aislamiento estricto por usuario.
+- **Fase 2 — robustez operativa**: rate limit en los endpoints LLM (exposición de coste Anthropic), pliegos >4.5MB vía Supabase Storage (esquiva el límite de payload y encaja con el auth), y desacoplar el import `api/_lib/presentationBuilder.js → ../../src/logic.js` (el backend no debería importar código del frontend; extraer utils compartidas a un módulo neutral).
+- **Fase 3 — observabilidad**: error tracking + logging estructurado.
+
+**Pregunta abierta pendiente de Jaime**: ¿Supabase Auth con email corporativo es válido, o el **SSO de Telefónica** es requisito desde el día uno? — cambia el diseño de la Fase 1.
+
+---
+
+*Última actualización: 15/07/2026 · Feature "Generar presentación PowerPoint" completado (rama `feat/presentation`): botón en `Analysis`, endpoint `POST /api/pliegos/[id]/presentation`, builder/renderer con pptxgenjs 3.12, síntesis del resumen final vía Claude; 206 tests. Giro estratégico: el proyecto pasa de demo a producto de uso real — la próxima iniciativa es autenticación + control de acceso (§14), prerrequisito bloqueante antes de más features.*

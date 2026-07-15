@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Analysis } from './Analysis.jsx';
@@ -228,5 +228,67 @@ describe('Analysis - edición del importe total del pliego (sección Lotes)', ()
 
     expect(onUpdatePliego).not.toHaveBeenCalled();
     expect(onUpdateAnalysis).not.toHaveBeenCalled();
+  });
+});
+
+describe('Analysis - botón Generar presentación', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const mockBinaryFetch = (blob) => {
+    global.URL.createObjectURL = vi.fn(() => 'blob:fake');
+    global.URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: async () => blob,
+      headers: { get: () => 'attachment; filename="Presentacion_2026-9999.pptx"' },
+    });
+  };
+
+  it('muestra "Generar presentación" (ya no "Generar borrador RFP") y mantiene "Exportar a Excel"', () => {
+    const pliego = buildPliego(3000, [1000, 2000]);
+    render(<Analysis pliego={pliego} onBack={vi.fn()} onUpdateAnalysis={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /Generar presentación/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Generar borrador RFP/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Exportar a Excel/ })).toBeInTheDocument();
+  });
+
+  it('al pulsar, llama al endpoint de presentación con el pliego y dispara la descarga', async () => {
+    const user = userEvent.setup();
+    const pliego = buildPliego(3000, [1000, 2000]);
+    mockBinaryFetch(new Blob(['pptx']));
+    render(<Analysis pliego={pliego} onBack={vi.fn()} onUpdateAnalysis={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /Generar presentación/ }));
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/pliegos/test-1/presentation', expect.objectContaining({ method: 'POST' }));
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
+  });
+
+  it('muestra un banner de error si la generación falla', async () => {
+    const user = userEvent.setup();
+    const pliego = buildPliego(3000, [1000, 2000]);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => ({ error: 'Claude ha fallado.' }),
+    });
+    const { container } = render(<Analysis pliego={pliego} onBack={vi.fn()} onUpdateAnalysis={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /Generar presentación/ }));
+
+    expect(container.textContent).toMatch(/No se ha podido generar la presentación/);
+    expect(container.textContent).toMatch(/Claude ha fallado/);
+  });
+
+  it('deshabilita el botón en el estado vacío (pliego sin analizar)', () => {
+    const pliego = {
+      id: 'sin-analisis', expediente: '2026/0001', titulo: 'Sin análisis',
+      organismo: 'Org', importe: 1000, lotes: 1, procedimiento: 'Abierto', ens: 'Alto',
+      analysisData: null,
+    };
+    render(<Analysis pliego={pliego} onBack={vi.fn()} onUpdateAnalysis={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /Generar presentación/ })).toBeDisabled();
   });
 });

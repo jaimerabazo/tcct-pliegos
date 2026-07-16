@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { presentationRequestSchema, presentationContentSchema } from '../../_lib/schemas.js';
 import { buildSlideSpecs, presentationFilename } from '../../_lib/presentationBuilder.js';
 import { renderPptx } from '../../_lib/presentationRenderer.js';
+import { requireUser } from '../../_lib/auth.js';
 
 // Generación más rápida que /api/analyze (no sube un PDF, solo sintetiza un resumen
 // corto sobre datos ya estructurados). 60s sobra; ver también vercel.json.
@@ -80,6 +81,9 @@ function buildAnalysisContext(pliego) {
 }
 
 export default async function handler(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return; // requireUser ya ha respondido 401/500
+
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Método no permitido.' });
     return;

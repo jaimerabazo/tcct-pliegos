@@ -3,6 +3,18 @@
 // de la BD al que consume la UI: las filas de Postgres traen las fechas como ISO,
 // pero los componentes las muestran en formato corto ("15 jul 2026").
 import { formatShortDate } from '../logic.js';
+import { authHeader, signOut } from '../lib/supabase.js';
+
+// fetch con sesión: adjunta el Bearer token de Supabase y, si el servidor responde 401
+// (sesión caducada/revocada), cierra la sesión local — AuthGate reacciona y vuelve al
+// Login. La respuesta se devuelve igualmente para que el llamante lance su error.
+async function apiFetch(url, { headers = {}, ...options } = {}) {
+  const res = await fetch(url, { ...options, headers: { ...(await authHeader()), ...headers } });
+  if (res.status === 401) {
+    await signOut();
+  }
+  return res;
+}
 
 async function jsonOrThrow(res, fallbackMsg) {
   if (!res.ok) {
@@ -28,7 +40,7 @@ export function normalizePliego(row) {
 }
 
 export async function listPliegos() {
-  const res = await fetch('/api/pliegos');
+  const res = await apiFetch('/api/pliegos');
   const rows = await jsonOrThrow(res, 'No se han podido cargar los pliegos');
   return rows.map(normalizePliego);
 }
@@ -37,7 +49,7 @@ export async function listPliegos() {
 // trae fechaLimite en formato corto desde Claude); la fila persistida completa llega
 // luego al invalidar la lista.
 export async function analyzePdf(file) {
-  const res = await fetch('/api/analyze', {
+  const res = await apiFetch('/api/analyze', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/pdf',
@@ -49,7 +61,7 @@ export async function analyzePdf(file) {
 }
 
 export async function updatePliego(id, patch) {
-  const res = await fetch(`/api/pliegos/${id}`, {
+  const res = await apiFetch(`/api/pliegos/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
@@ -58,7 +70,7 @@ export async function updatePliego(id, patch) {
 }
 
 export async function updateAnalysis(id, analysisData) {
-  const res = await fetch(`/api/pliegos/${id}/analysis`, {
+  const res = await apiFetch(`/api/pliegos/${id}/analysis`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(analysisData),
@@ -78,7 +90,7 @@ function filenameFromDisposition(header) {
 // que el llamante dispare la descarga; en error el servidor sí responde JSON con { error }.
 // Manda el pliego cacheado (cabecera + analysisData) en el body — el endpoint no relee la BD.
 export async function generatePresentation(pliego) {
-  const res = await fetch(`/api/pliegos/${pliego.id}/presentation`, {
+  const res = await apiFetch(`/api/pliegos/${pliego.id}/presentation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(pliego),

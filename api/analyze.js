@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from './_lib/prisma.js';
 import { pliegoFromAnalysisSchema, analysisDataSchema } from './_lib/schemas.js';
+import { requireUser } from './_lib/auth.js';
 import { parseShortDate } from '../src/logic.js';
 
 export const config = {
@@ -257,6 +258,11 @@ export async function persistAnalysis(client, result) {
 }
 
 export default async function handler(req, res) {
+  // Guard de auth ANTES de leer el body: sin sesión válida no se gasta ni un byte
+  // (ni una llamada a Claude — este endpoint es el más caro de la app).
+  const user = await requireUser(req, res);
+  if (!user) return; // requireUser ya ha respondido 401/500
+
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Método no permitido.' });
     return;

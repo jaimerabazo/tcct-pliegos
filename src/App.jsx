@@ -12,7 +12,7 @@ import { theme } from './theme.js';
 // Shell de la app: navegación (dashboard ↔ análisis), estado de servidor vía TanStack
 // Query (la lista de pliegos es la única fuente de verdad) y el modal de subida. Los
 // datos y callbacks bajan a las vistas presentacionales (Dashboard/Analysis) por props.
-export default function App() {
+export default function App({ user, onSignOut }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState('dashboard');
   const [selectedId, setSelectedId] = useState(null);
@@ -72,7 +72,7 @@ export default function App() {
   return (
     <>
       <div className="min-h-screen flex" style={{ background: theme.page, fontFamily: '"Inter", -apple-system, sans-serif', color: theme.text }}>
-        <Sidebar view={view} setView={handleNavigate} />
+        <Sidebar view={view} setView={handleNavigate} user={user} onSignOut={onSignOut} />
         <main className="flex-1 overflow-auto">
           {view === 'dashboard' && (
             isLoading ? (

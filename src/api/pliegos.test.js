@@ -66,6 +66,11 @@ describe('listPliegos', () => {
     });
     await expect(listPliegos()).rejects.toThrow(/HTTP 500/);
   });
+
+  it('ante un 401 propaga el error del servidor (y apiFetch cierra la sesión local)', async () => {
+    mockFetchOnce({ ok: false, status: 401, body: { error: 'No autorizado. Inicia sesión para continuar.' } });
+    await expect(listPliegos()).rejects.toThrow(/No autorizado/);
+  });
 });
 
 describe('analyzePdf', () => {

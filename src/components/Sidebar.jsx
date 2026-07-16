@@ -1,7 +1,16 @@
-import { LayoutDashboard, FileSearch, Settings, Wand2, Sparkles } from 'lucide-react';
+import { LayoutDashboard, FileSearch, Settings, Wand2, Sparkles, LogOut } from 'lucide-react';
 import { theme } from '../theme.js';
 
-export const Sidebar = ({ view, setView }) => (
+// Iniciales para el avatar a partir del email ("jaime.rabazo@x.com" → "JR").
+export const emailInitials = (email) => {
+  const local = (email || '').split('@')[0];
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+};
+
+export const Sidebar = ({ view, setView, user, onSignOut }) => (
   <aside className="w-56 shrink-0 border-r flex flex-col" style={{ borderColor: theme.sidebar.border, background: theme.sidebar.bg }}>
     <div className="p-5 border-b" style={{ borderColor: theme.sidebar.border }}>
       <div className="flex items-center gap-2.5">
@@ -60,13 +69,28 @@ export const Sidebar = ({ view, setView }) => (
 
     <div className="p-3 border-t" style={{ borderColor: theme.sidebar.border }}>
       <div className="flex items-center gap-2.5 p-2 rounded-md" style={{ background: theme.sidebar.hover }}>
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px]" style={{ background: theme.sidebar.activeBg, color: theme.white, fontFamily: '"Space Grotesk", sans-serif', fontWeight: 500 }}>
-          JC
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] shrink-0" style={{ background: theme.sidebar.activeBg, color: theme.white, fontFamily: '"Space Grotesk", sans-serif', fontWeight: 500 }}>
+          {emailInitials(user?.email)}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[12px] truncate" style={{ color: theme.white, fontWeight: 500 }}>Jaime Carrasco</div>
-          <div className="text-[10px] truncate" style={{ color: theme.sidebar.text }}>Presales · TCCT</div>
+          <div className="text-[12px] truncate" style={{ color: theme.white, fontWeight: 500 }} title={user?.email}>
+            {user?.email || 'Sesión activa'}
+          </div>
+          <div className="text-[10px] truncate" style={{ color: theme.sidebar.text }}>Presales Suite</div>
         </div>
+        {onSignOut && (
+          <button
+            onClick={onSignOut}
+            title="Cerrar sesión"
+            aria-label="Cerrar sesión"
+            className="p-1.5 rounded-md transition shrink-0"
+            style={{ color: theme.sidebar.text }}
+            onMouseEnter={e => { e.currentTarget.style.background = theme.sidebar.activeBg; e.currentTarget.style.color = theme.white; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = theme.sidebar.text; }}
+          >
+            <LogOut size={14} strokeWidth={1.8} />
+          </button>
+        )}
       </div>
     </div>
   </aside>

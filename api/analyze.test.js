@@ -1,6 +1,10 @@
+// @vitest-environment node
+// (los tests de API firman JWTs con jose, que falla bajo jsdom; no necesitan DOM)
 import { describe, it, expect } from 'vitest';
-import { toPliegoRowFromAnalysis, persistAnalysis } from './analyze.js';
+import handler, { toPliegoRowFromAnalysis, persistAnalysis } from './analyze.js';
 import { createFakePliegoPrisma } from './_lib/testFakePrisma.js';
+import { createFakeRes } from './_lib/testFakeRes.js';
+import './_lib/testAuth.js'; // instala el secret de test para el guard de auth
 import { MOCK_ANALYSIS } from '../prisma/seed.js';
 
 const sampleResult = {
@@ -81,5 +85,21 @@ describe('persistAnalysis', () => {
     const todos = await prisma.pliego.findMany();
     expect(todos).toHaveLength(1);
     expect(todos[0].importe).toBe(2000000);
+  });
+});
+
+// El handler completo (llamada real a Claude) se verifica a mano, no por CI — pero el
+// guard de auth corre ANTES de leer el body o tocar Claude, así que sí es testeable.
+describe('handler POST /api/analyze — auth', () => {
+  it('responde 401 sin token, antes de gastar nada', async () => {
+    const res = createFakeRes();
+    await handler({ method: 'POST', headers: {} }, res);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('responde 401 con token inválido', async () => {
+    const res = createFakeRes();
+    await handler({ method: 'POST', headers: { authorization: 'Bearer basura' } }, res);
+    expect(res.statusCode).toBe(401);
   });
 });

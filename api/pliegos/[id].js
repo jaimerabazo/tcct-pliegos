@@ -1,5 +1,6 @@
 import { prisma } from '../_lib/prisma.js';
 import { pliegoPatchSchema } from '../_lib/schemas.js';
+import { requireUser } from '../_lib/auth.js';
 
 // Núcleo testable — ver api/_lib/testFakePrisma.js para el doble usado en tests.
 export async function getPliego(client, id) {
@@ -13,6 +14,9 @@ export async function updatePliego(client, id, patch) {
 // `client` es inyectable para tests (ver api/pliegos/[id].test.js); Vercel siempre
 // lo llama con dos argumentos, así que en producción cae al singleton real.
 export default async function handler(req, res, client = prisma) {
+  const user = await requireUser(req, res);
+  if (!user) return; // requireUser ya ha respondido 401/500
+
   const { id } = req.query;
 
   if (req.method === 'GET') {

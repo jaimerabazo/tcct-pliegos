@@ -133,12 +133,12 @@ aviso en vez de fallar en rojo. El pipeline se activa solo al completar el runbo
 
 **Supabase** (con la organización/cuenta actual):
 - [x] 1. Renombrar mentalmente el proyecto actual como **dev** (opcional: renombrarlo "pliegos-dev" en Settings → General).
-- [ ] 2. Crear proyecto **staging** — región **Ireland (eu-west-1)**. Anotar: Project URL, anon key, JWT Secret, y el connection string del **Session pooler** (¡el pooler, no el Direct! — recuerda el gotcha IPv6 de CLAUDE.md §5).
-- [ ] 3. Crear proyecto **prod** — ídem. Guardar sus credenciales aparte (idealmente en un gestor de contraseñas, no en notas).
+- [x] 2. Crear proyecto **staging** — región **Ireland (eu-west-1)**. Anotar: Project URL, anon key, JWT Secret, y el connection string del **Session pooler** (¡el pooler, no el Direct! — recuerda el gotcha IPv6 de CLAUDE.md §5).
+- [] 3. Crear proyecto **prod** — ídem. Guardar sus credenciales aparte (idealmente en un gestor de contraseñas, no en notas).
 - [ ] 4. En staging y prod: Authentication → desactivar "Allow new users to sign up" (mismo estado que dev; el self-service de orgs llega en Bloque 3 con su propio flujo).
 
 **Anthropic Console**:
-- [ ] 5. Crear 3 API keys: `pliegos-dev`, `pliegos-staging`, `pliegos-prod`. Límite de gasto bajo en dev/staging (p.ej. 25€/mes).
+- [x] 5. Crear 3 API keys: `pliegos-dev`, `pliegos-staging`, `pliegos-prod`. Límite de gasto bajo en dev/staging (p.ej. 25€/mes).
 - [ ] 6. Sustituir la key de `.env.local` por `pliegos-dev` (la actual además estaba caducada).
 
 **Vercel** (Settings → Environment Variables):

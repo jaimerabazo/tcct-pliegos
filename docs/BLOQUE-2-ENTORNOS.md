@@ -9,6 +9,26 @@
 
 ---
 
+## 0. Realidad del plan gratuito: 2 entornos, no 3 (decisión 21/07/2026)
+
+El plan free de Supabase permite **2 proyectos**. El ideal de 3 entornos exige Supabase
+Pro (~25€/mes). Pre-lanzamiento y sin clientes, pagarlo es quemar caja por un lujo que
+aún no se usa. **Decisión consciente y documentada** (lección de founder: recortar a
+propósito, no por descuido):
+
+- **dev** = proyecto actual (local).
+- **staging** = proyecto nuevo. Por ahora es el ÚNICO entorno "vivo": sirve la preview de
+  `develop` y —cuando haya URL pública— también la producción de Vercel.
+- **prod** = **APLAZADO**. Disparador para crearlo: **primer piloto de pago** → subir a
+  Supabase Pro, crear el proyecto prod y repuntar Vercel prod ahí. El pipeline ya lo
+  soporta: el job `migrate-production` se salta en verde mientras no exista su secret.
+
+Coste del recorte, honesto: hasta ese día no hay un "ensayo en staging antes de prod"
+real — staging ES el entorno vivo. Aceptable sin usuarios reales; deja de serlo el día
+del primer cliente (por eso ese día es el disparador).
+
+---
+
 ## 1. La lección: por qué existen los entornos
 
 **Radio de explosión (blast radius).** Cada entorno es un cortafuegos: un error en dev
@@ -134,27 +154,26 @@ aviso en vez de fallar en rojo. El pipeline se activa solo al completar el runbo
 **Supabase** (con la organización/cuenta actual):
 - [x] 1. Renombrar mentalmente el proyecto actual como **dev** (opcional: renombrarlo "pliegos-dev" en Settings → General).
 - [x] 2. Crear proyecto **staging** — región **Ireland (eu-west-1)**. Anotar: Project URL, anon key, JWT Secret, y el connection string del **Session pooler** (¡el pooler, no el Direct! — recuerda el gotcha IPv6 de CLAUDE.md §5).
-- [] 3. Crear proyecto **prod** — ídem. Guardar sus credenciales aparte (idealmente en un gestor de contraseñas, no en notas).
-- [ ] 4. En staging y prod: Authentication → desactivar "Allow new users to sign up" (mismo estado que dev; el self-service de orgs llega en Bloque 3 con su propio flujo).
+- [~] 3. ~~Crear proyecto **prod**~~ → **APLAZADO** (límite de 2 proyectos del plan free, ver §0). Se crea con el primer piloto de pago, subiendo a Supabase Pro.
+- [ ] 4. En staging: Authentication → desactivar "Allow new users to sign up" (mismo estado que dev; el self-service de orgs llega en Bloque 3).
 
 **Anthropic Console**:
 - [x] 5. Crear 3 API keys: `pliegos-dev`, `pliegos-staging`, `pliegos-prod`. Límite de gasto bajo en dev/staging (p.ej. 25€/mes).
-- [ ] 6. Sustituir la key de `.env.local` por `pliegos-dev` (la actual además estaba caducada).
+- [x] 6. Sustituir la key de `.env.local` por `pliegos-dev` (la actual además estaba caducada).
 
 **Vercel** (Settings → Environment Variables):
-- [ ] 7. **Production**: las 5 variables con valores de PROD.
-- [ ] 8. **Preview** con scope a la rama `develop`: las 5 con valores de STAGING.
-- [ ] 9. **Development**: valores de dev (o se omite: `.env.local` + `vercel env pull` ya lo cubren).
+- [~] 7. ~~**Production** con valores de PROD~~ → APLAZADO con prod (§0). Mientras tanto, Production apunta a STAGING (mismas 5 variables que Preview) si se quiere URL pública ya.
+- [x] 8. **Preview** con scope a la rama `develop`: las 5 con valores de STAGING.
+- [x] 9. **Development**: valores de dev (o se omite: `.env.local` + `vercel env pull` ya lo cubren).
 
 **GitHub** (repo → Settings):
-- [ ] 10. Environments → crear `staging` (sin protección) y `production` (**Required reviewers: tú**).
-- [ ] 11. En el environment `staging`: secret `DATABASE_URL` = pooler de staging. En `production`: secret `DATABASE_URL` = pooler de prod.
-- [ ] 12. Comprobar que la rama `develop` existe y está al día con `main` (existe en el repo; conviene resetearla: `git checkout develop && git reset --hard main && git push -f`).
+- [x] 10. Environments → crear `staging` (sin protección) y `production` (**Required reviewers: tú**) — el de production queda creado pero dormido hasta que exista prod.
+- [x] 11. En el environment `staging`: secret `DATABASE_URL` = **Session pooler de staging** . El de `production` se rellena cuando exista prod.
+- [x] 12. Comprobar que la rama `develop` existe y está al día con `main`.
 
 **Primer viaje del pipeline (la verificación del bloque)**:
 - [ ] 13. Push de este bloque a `develop` → ver en Actions cómo `migrate.yml` aplica el schema a staging (la primera vez aplica TODAS las migraciones: crea las tablas).
-- [ ] 14. PR develop → main → merge → aprobar el gate → schema aplicado a prod.
-- [ ] 15. Abrir la URL de producción: debe salir el login (BD vacía, sin usuarios — correcto: prod nace limpio y NUNCA se seedea).
+- [~] 14-15. ~~Viaje a prod~~ → APLAZADO con prod (§0). La verificación del bloque es que el schema llegue a **staging** (paso 13).
 
 ---
 

@@ -1,0 +1,71 @@
+# Migraciones de BD por entorno (ver docs/BLOQUE-2-ENTORNOS.md §5):
+#   push a develop → prisma migrate deploy contra STAGING (automático)
+#   push a main    → prisma migrate deploy contra PROD (con gate de aprobación:
+#                    GitHub Environment "production" exige required reviewer)
+#
+# Los secrets DATABASE_URL viven en cada GitHub Environment (staging/production), no
+# como secrets de repo: así el de prod solo es accesible tras pasar el gate.
+# Guard: si el secret aún no está configurado, el job avisa y termina en verde — el
+# pipeline se activa solo cuando el runbook del Bloque 2 esté completado.
+name: Migrate
+
+on:
+  push:
+    branches: [main, develop]
+
+jobs:
+  migrate-staging:
+    name: Migrate staging
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply migrations to staging
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL no configurado en el environment 'staging' — migración omitida (runbook Bloque 2 pendiente)."
+            exit 0
+          fi
+          npm run db:migrate:deploy
+
+  migrate-production:
+    name: Migrate production (requiere aprobación)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply migrations to production
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL no configurado en el environment 'production' — migración omitida (runbook Bloque 2 pendiente)."
+            exit 0
+          fi
+          npm run db:migrate:deploy

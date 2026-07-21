@@ -9,9 +9,10 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 *.log
-.env.example
 coverage
 
 /src/generated/prisma
 .vercel
 .env*
+# La plantilla SÍ se versiona (no lleva secretos); la negación debe ir DESPUÉS del glob
+!.env.example

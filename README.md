@@ -1,8 +1,10 @@
-# TCCT Pliegos · Analizador de Pliegos
+# Analizador de Pliegos
 
-Herramienta interna del equipo de presales de Telefónica Cybersecurity & Cloud Tech (TCCT) para extraer y revisar datos estructurados de pliegos de licitación pública.
+Plataforma de extracción y revisión de datos estructurados de pliegos de licitación pública española, asistida por IA.
 
-El flujo completo ya es funcional: subes un PDF, Claude extrae el JSON estructurado, se persiste en Supabase (Postgres vía Prisma) y el frontend React consume la API REST con TanStack Query. Las ediciones manuales sobreviven a recargar la página.
+> **Nota:** el proyecto nació como herramienta interna de presales (nombre provisional "TCCT Pliegos") y **está pivotando a un producto B2B SaaS comercial** para consultoras e integradores que licitan. La estrategia, arquitectura y roadmap vigentes viven en **`docs/`** (`ARQUITECTURA-SAAS.md`, `BLOQUE-1-DISENO-TENANCY.md`, `BLOQUE-2-ENTORNOS.md`). Este README documenta cómo arrancar y desplegar el estado actual del código.
+
+El flujo funcional: inicias sesión (magic link), subes un PDF, Claude extrae el JSON estructurado, se persiste en Supabase (Postgres vía Prisma) y el frontend React consume la API REST con TanStack Query. Las ediciones manuales sobreviven a recargar la página. Todos los endpoints requieren sesión (JWT de Supabase).
 
 ## Arrancarlo en local
 
@@ -17,7 +19,7 @@ Abre `http://localhost:5173`. **Ojo**: sin backend, el dashboard no carga pliego
 
 ### Full-stack en local (recomendado)
 
-Necesitas `ANTHROPIC_API_KEY` y `DATABASE_URL` en `.env.local` (usa el **Session pooler** de Supabase, no la conexión Direct — ver `CLAUDE.md` §5).
+Copia `.env.example` a `.env.local` y rellénalo: `ANTHROPIC_API_KEY`, `DATABASE_URL` (usa el **Session pooler** de Supabase, no la conexión Direct — ver `CLAUDE.md` §5), `SUPABASE_JWT_SECRET`, `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
 
 ```bash
 npm install
@@ -43,15 +45,16 @@ En cada push/PR a `main` o `develop`, GitHub Actions (`.github/workflows/ci.yml`
 
 1. Push a GitHub (`jaimerabazo/tcct-pliegos`).
 2. [vercel.com](https://vercel.com) → Import Project → Deploy (detecta Vite automáticamente).
-3. En Settings → Environment Variables (Production + Preview):
-   - `ANTHROPIC_API_KEY` — obligatoria para `/api/analyze`
-   - `DATABASE_URL` — obligatoria para cualquier endpoint que use Prisma (pooler de Supabase)
-   - `ANTHROPIC_MODEL` — opcional; por defecto `claude-sonnet-5`
-4. Cada `git push` a `main` redeploya automáticamente. `postinstall: prisma generate` corre en cada build.
+3. En Settings → Environment Variables (Production + Preview) — las 5 del `.env.example`:
+   - `ANTHROPIC_API_KEY` (+ `ANTHROPIC_MODEL` opcional, por defecto `claude-sonnet-5`)
+   - `DATABASE_URL` (pooler de Supabase)
+   - `SUPABASE_JWT_SECRET`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+   - El mapa por entorno (dev/staging/prod) está en `docs/BLOQUE-2-ENTORNOS.md §4`.
+4. Las migraciones NO se aplican a mano: `.github/workflows/migrate.yml` corre `prisma migrate deploy` a staging (push a `develop`) y a prod (push a `main`, con gate de aprobación). Ver `docs/BLOQUE-2`.
 
-**Seguridad**: la URL de Vercel es pública por defecto. Activa Vercel Password Protection antes de compartirla ampliamente.
+**Seguridad**: todos los endpoints exigen sesión (guard JWT en `api/_lib/auth.js`); el registro es invite-only (usuarios dados de alta desde el dashboard de Supabase).
 
-**Límite conocido**: las Vercel Functions (Node) aceptan hasta ~4.5 MB de payload. Pliegos muy grandes o escaneados pueden superarlo.
+**Límite conocido**: las Vercel Functions (Node) aceptan hasta ~4.5 MB de payload. Pliegos muy grandes o escaneados pueden superarlo (mitigación planificada: Supabase Storage, ver `docs/ARQUITECTURA-SAAS.md §9`).
 
 ## Estructura
 
@@ -77,15 +80,16 @@ tcct-pliegos/
 
 Los datos demo viven en `prisma/seed.js`, no en el frontend. Un pliego sin `analysisData` muestra estado vacío en la vista de análisis.
 
-## Próximos pasos
+## Roadmap
 
-- [x] Modal de upload con drag & drop del PDF
-- [x] Extracción real vía API de Anthropic Claude
-- [x] Persistencia en Supabase + API REST + frontend conectado
-- [x] Edición manual de campos (persiste en BD)
-- [x] KPIs reactivas, histograma por organismo, aviso de descuadre lotes↔importe
-- [x] CI con tests y cobertura como gate
-- [ ] Vista de comparativa entre dos pliegos
-- [ ] Exportación real a Excel (SheetJS)
-- [ ] Autenticación (SSO Telefónica si escala a producción)
-- [ ] Generador de borrador RFP (siguiente caso de uso prioritario)
+El roadmap vigente es el del **pivot a B2B SaaS**, en `docs/` (Bloques 0-6):
+
+- [x] Extracción real (Claude) + persistencia (Supabase/Prisma) + frontend conectado
+- [x] Edición manual con confianza · KPIs · exportación a PowerPoint · CI con cobertura ≥90%
+- [x] **Autenticación** (Supabase magic link invite-only + guard JWT) — mergeado a `main`
+- [x] Bloque 0-1: arquitectura SaaS + diseño de multi-tenancy (`docs/`)
+- [x] Bloque 2: entornos dev/staging + pipeline de migraciones
+- [ ] **Bloque 3: multi-tenancy** (orgs, memberships, RLS, tests de aislamiento) ← siguiente
+- [ ] Bloque 4: billing + metering (Stripe) · Bloque 5: hardening + RGPD · Bloque 6: pilotos
+
+Features de producto aparcadas tras el pivot (segundo plano): comparativa entre pliegos, export Excel, generador de borrador RFP.

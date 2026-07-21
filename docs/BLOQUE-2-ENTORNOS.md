@@ -4,8 +4,9 @@
 > manos fuera de producción. Mitad lección, mitad runbook: las tareas de dashboard son
 > de Jaime (🧑‍💻), las de repo ya están hechas en este bloque (🤖).
 >
-> Estado: **en ejecución** (16/07/2026). Región confirmada del proyecto actual: **Irlanda
-> (eu-west-1) ✅** → sirve como `dev` sin recrear.
+> Estado: **CERRADO** (21/07/2026). Región del proyecto actual: **Irlanda (eu-west-1) ✅** →
+> sirve como `dev`. Resultado: 2 entornos (dev + staging), prod aplazado (ver §0); pipeline de
+> migraciones a staging funcionando. Siguiente: Bloque 3 (implementación de tenancy).
 
 ---
 
@@ -36,14 +37,18 @@ te cuesta un `git checkout`; en staging, un redeploy; en prod, clientes y reputa
 El objetivo del diseño es que **la distancia entre "me he equivocado" y "lo ha notado un
 cliente" tenga dos puertas por medio**.
 
+> ⚠️ **Nota:** el diagrama de abajo es el modelo IDEAL de 3 entornos. Por el límite del plan
+> free de Supabase (§0), **hoy solo existen dev + staging**; el bloque `production` está
+> **aplazado** hasta el primer piloto de pago. Se deja aquí como referencia del objetivo.
+
 ```
 dev        tu máquina + Supabase "dev" (el proyecto ACTUAL, Irlanda)
            → datos falsos (seed), se puede romper sin pedir perdón
 
-staging    Vercel Preview (rama develop) + Supabase "staging" (nuevo, Irlanda)
-           → réplica de prod SIN datos reales; aquí ensayan las migraciones
+staging    Vercel Preview (rama develop) + Supabase "staging" (nuevo, Irlanda)   ← hoy, el entorno vivo
+           → aquí ensayan las migraciones
 
-production Vercel Production (rama main) + Supabase "prod" (nuevo, Irlanda)
+production Vercel Production (rama main) + Supabase "prod"   ← APLAZADO (§0)
            → sagrado: nadie ejecuta nada a mano contra él. Nunca. Ni tú.
 ```
 
@@ -115,6 +120,9 @@ Suena a burocracia hasta el día que te ahorra el primer incendio. Regla mnemot�
 | `VITE_SUPABASE_ANON_KEY` | dev | staging | prod |
 | `ANTHROPIC_API_KEY` | key "dev" ⚠️ | key "staging" | key "prod" |
 | `ANTHROPIC_MODEL` | (opcional) | (opcional) | (opcional) |
+
+La columna **prod** de la tabla es de referencia (se rellenará cuando exista prod, §0);
+hoy solo se configuran las columnas **dev** y **staging**.
 
 ⚠️ **Keys de Anthropic separadas con límite de gasto** en la de dev/staging (Console →
 Billing → Spend limits): un bucle infinito en desarrollo no puede costarte el

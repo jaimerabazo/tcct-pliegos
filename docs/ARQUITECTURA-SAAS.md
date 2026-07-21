@@ -201,9 +201,9 @@ production Vercel prod + proyecto Supabase "prod" REGIÓN UE  → datos reales, 
 ## 14. Roadmap de bloques (aprender construyendo)
 
 - [x] **Bloque 0** — este documento.
-- [ ] **Bloque 1** — Diseño en detalle: schema Prisma nuevo completo + matriz de permisos + diseño del middleware y del RLS. En papel, revisado antes de codear.
-- [ ] **Bloque 2** — Entornos: 3 proyectos Supabase, envs en Vercel, CI con migraciones, secrets por entorno.
-- [ ] **Bloque 3** — Implementación tenancy: orgs, memberships, invitaciones, scoping, RLS, tests de aislamiento.
+- [x] **Bloque 1** — Diseño en detalle del tenancy/RBAC/RLS (`docs/BLOQUE-1-DISENO-TENANCY.md`).
+- [x] **Bloque 2** — Entornos + CI de migraciones (`docs/BLOQUE-2-ENTORNOS.md`). Nota: 2 entornos (dev+staging), prod aplazado por el plan free de Supabase (ver ese doc §0).
+- [ ] **Bloque 3** — Implementación tenancy: orgs, memberships, invitaciones, scoping, RLS, tests de aislamiento. ← **siguiente** (rama `feat/tenancy`).
 - [ ] **Bloque 4** — Billing: Stripe + metering + límites.
 - [ ] **Bloque 5** — Hardening: audit log, rate limits, Sentry, backups probados, docs RGPD.
 - [ ] **Bloque 6** — Pilotos: 2-3 consultoras conocidas, feedback, pricing real.

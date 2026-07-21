@@ -1,6 +1,26 @@
-# CLAUDE.md — TCCT Pliegos
+# CLAUDE.md — Analizador de Pliegos
 
-> Contexto persistente para trabajar con Claude en el proyecto **Analizador de Pliegos** de Telefónica Cybersecurity & Cloud Tech (TCCT). Pegar en el próximo chat o dejar en la raíz del repo.
+> Contexto persistente para trabajar con Claude en el proyecto. Pegar en el próximo chat o dejar en la raíz del repo.
+
+> ## ⚠️ LÉEME PRIMERO — el proyecto pivotó a B2B SaaS comercial (21/07/2026)
+>
+> Este proyecto nació como **herramienta interna** del equipo de presales de TCCT (de ahí el
+> nombre "TCCT Pliegos", la marca corporativa y el framing de "vender a JC"). **Ha pivotado a
+> una plataforma B2B SaaS comercial e independiente**, propiedad de Jaime, para consultoras e
+> integradores que licitan (~10 personas/empresa). La marca "TCCT Pliegos" desaparecerá.
+>
+> **Jerarquía de fuentes de verdad:**
+> - **Estrategia, arquitectura y roadmap VIVOS → `docs/`** (`ARQUITECTURA-SAAS.md` = Bloque 0,
+>   `BLOQUE-1-DISENO-TENANCY.md`, `BLOQUE-2-ENTORNOS.md`). Es lo que manda.
+> - **Este CLAUDE.md** = **referencia técnica** del código actual (stack, gotchas, estructura de
+>   ficheros) — sigue siendo válido y útil. PERO sus secciones de **estrategia y roadmap (§2, §10,
+>   §14) son HISTÓRICO de la etapa "herramienta interna"** — están marcadas como superadas; no las
+>   tomes como el plan vigente.
+>
+> **Estado actual (21/07/2026):** auth (Supabase magic link invite-only + guard JWT en toda la
+> API) **ya implementado y mergeado a `main`**. Bloques 0-2 del roadmap SaaS completados (docs +
+> pipeline de entornos dev/staging). **Siguiente: Bloque 3 — implementar multi-tenancy** (orgs,
+> memberships, RLS, tests de aislamiento), en rama `feat/tenancy`. Ver `docs/BLOQUE-1`.
 
 ---
 
@@ -16,7 +36,12 @@
 
 ## 2. El proyecto
 
-**Nombre**: TCCT Pliegos · Presales Suite
+> 🕰️ **Framing histórico (etapa "herramienta interna").** El origen y la estrategia de abajo son de
+> cuando el objetivo era una tool interna para TCCT. Siguen siendo útiles para entender **de dónde
+> viene** el producto y el dominio, pero la visión vigente es la de `docs/ARQUITECTURA-SAAS.md` (B2B
+> SaaS comercial). El "cliente" ya no es JC/TCCT sino consultoras externas que licitan.
+
+**Nombre**: TCCT Pliegos · Presales Suite *(nombre provisional — la marca desaparece con la comercialización)*
 **Objetivo**: automatizar la extracción estructurada de datos de expedientes de licitación pública, para acelerar el bloque "Dispatching" y "Diseño Solución" del Presales Journey de TCCT.
 
 **Origen**: análisis del "Presales Journey" (5 bloques secuenciales — Dispatching → Diseño Solución → Business Case → Presentación Oferta → Post Venta). Se identificaron 10 cuellos de botella; se priorizó el **lector de pliegos** como quick win por dos motivos: (1) es el trabajo diario actual de Jaime con el expediente 2026/7008 de GISS, (2) input y output cerrados (PDF entra, JSON estructurado sale) — no requiere integración con Salesforce/SHERPA/Outlook para arrancar.
@@ -96,7 +121,7 @@
 
 **Pendiente inmediato**: backlog corto plazo (vista de comparativa, ajustar mocks del seed, filtro de pliegos en dashboard, exportación Excel real). **Siguiente iniciativa prioritaria: autenticación + control de acceso** (ver §14) — pasa a ser prerrequisito bloqueante porque el equipo usará la app con expedientes reales en semanas.
 
-**Aviso registrado**: URL de Vercel es pública por defecto. Con datos reales entrando y el equipo a punto de acceder, hay que activar Vercel Password Protection/SSO **ya** (medida puente) y construir auth real (§14). Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar (mitigar vía Supabase Storage al abordar el auth).
+**Aviso registrado** *(actualizado 21/07)*: el auth ya está construido (guard JWT en todos los endpoints + login invite-only), así que la puerta está cerrada a nivel de aplicación. Pendiente aún el **aislamiento por tenant** (Bloque 3): hoy cualquier usuario autenticado ve todos los pliegos (modelo `Pliego` global). Límite conocido: las Vercel Functions (Node) aceptan payloads de ~4.5MB; pliegos grandes o escaneados pueden fallar (mitigar vía Supabase Storage, ver `docs/ARQUITECTURA-SAAS.md §9`).
 
 ---
 
@@ -115,7 +140,7 @@ Vitest 4         test runner (+ @testing-library/react, jsdom)
 
 **Testing**: `npm run test` (una vez), `npm run test:watch`, `npm run test:coverage`. La lógica de negocio pura vive en `src/logic.js` (formateo, `computeDashboardKpis`, `getLotesSumMismatch`) con tests en `src/logic.test.js` — umbral de cobertura ≥90% (líneas/funciones/branches/statements) configurado en `vitest.config.js`, acotado a `src/logic.js` + `src/api/pliegos.js` + `api/_lib/schemas.js` + los handlers de `api/pliegos/*` (`coverage.include`). Regla acordada con Jaime: **toda feature nueva debe llevar tests con ≥90% de cobertura** de su lógica; se amplía el `include` según se vayan cubriendo más partes. Patrón de testing para el backend: inyección del cliente Prisma por parámetro (nunca `vi.mock`), con un doble en memoria en `api/_lib/testFakePrisma.js` — ver §10 Fase 2 para el detalle. `src/views/Dashboard.test.jsx` y `src/views/Analysis.test.jsx` son tests de integración ligeros con React Testing Library (no cuentan para el umbral, son un plus). **CI** (`.github/workflows/ci.yml`): gate automático en push/PR a `main`/`develop`.
 
-**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.create()` con `output_config.format: json_schema` para la extracción, valida el resultado con Zod (`api/_lib/schemas.js`) y lo persiste (`prisma.pliego.upsert` por `expediente`). Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. API REST completa en `api/pliegos/` (listar, obtener, actualizar cabecera, actualizar análisis, **generar presentación**) — ver §10 Fase 2 y el feature PPTX de §4. El frontend consume estos endpoints vía TanStack Query (`src/App.jsx` + `src/api/pliegos.js`). **Ningún endpoint tiene aún control de acceso** — es la próxima iniciativa (§14).
+**Backend**: `api/analyze.js`, función serverless de Vercel (Node, `@anthropic-ai/sdk`). Envía el PDF a Claude como `document` base64 y usa `messages.create()` con `output_config.format: json_schema` para la extracción, valida el resultado con Zod (`api/_lib/schemas.js`) y lo persiste (`prisma.pliego.upsert` por `expediente`). Requiere `ANTHROPIC_API_KEY` como variable de entorno (local: `.env.local` + `vercel dev`; producción/preview: Vercel dashboard). `ANTHROPIC_MODEL` es opcional; por defecto usa `claude-sonnet-5`. API REST completa en `api/pliegos/` (listar, obtener, actualizar cabecera, actualizar análisis, **generar presentación**) — ver §10 Fase 2 y el feature PPTX de §4. El frontend consume estos endpoints vía TanStack Query (`src/App.jsx` + `src/api/pliegos.js`). **Todos los endpoints están protegidos** por el guard `requireUser` (`api/_lib/auth.js`, verifica el JWT de Supabase) — ver la sección de Autenticación en §8. Aún sin scoping por tenant (Bloque 3).
 
 **Base de datos**: Supabase (Postgres) + Prisma 7 (`prisma/schema.prisma`, modelo único `Pliego` con `analysisData Json?`). Un par de cosas no obvias de Prisma 7 que costó descubrir, para no volver a perder tiempo:
 - **La conexión "Direct" de Supabase es IPv6-only** (sin registro DNS A, solo AAAA) salvo que pagues el add-on de IPv4 — inalcanzable desde Vercel y desde muchos entornos de desarrollo. Hay que usar el **connection pooler** (Supabase dashboard → Settings → Database → "Session pooler", host `*.pooler.supabase.com`, puerto 5432) como `DATABASE_URL`.
@@ -209,8 +234,15 @@ tcct-pliegos/
 │       ├── presentationBuilder.test.js
 │       ├── presentationRenderer.js      IO: renderPptx(specs) con pptxgenjs (sin test unit) + paginación de bloques
 │       ├── presentationTheme.js         paleta TT corporativa + fuentes Office para el .pptx (independiente de src/theme.js)
+│       ├── auth.js             Guard requireUser/getUserFromRequest: verifica el JWT de Supabase (HS256 o JWKS)
+│       ├── auth.test.js
 │       ├── testFakePrisma.js   Doble en memoria de PrismaClient para tests (findMany/findUnique/update/create/upsert)
-│       └── testFakeRes.js      Doble mínimo del objeto `res` de Vercel para tests
+│       ├── testFakeRes.js      Doble mínimo del objeto `res` de Vercel para tests
+│       └── testAuth.js         Helper de tests: firma JWTs reales (jose) con secret de test — sin vi.mock
+├── docs/                       FUENTE DE VERDAD viva del pivot SaaS
+│   ├── ARQUITECTURA-SAAS.md     Bloque 0: visión, tenancy, threat model, roadmap
+│   ├── BLOQUE-1-DISENO-TENANCY.md  schema multi-tenant + RBAC + RLS (diseño, aún sin implementar)
+│   └── BLOQUE-2-ENTORNOS.md     dev/staging/prod, CI de migraciones, expand&contract
 ├── prisma/
 │   ├── schema.prisma           Modelo Pliego (analysisData como Json)
 │   ├── seed.js                 Puebla los 6 pliegos demo (idempotente); exporta MOCK_PLIEGOS/MOCK_ANALYSIS
@@ -218,23 +250,29 @@ tcct-pliegos/
 │   └── migrations/
 ├── prisma.config.ts            Config de la CLI de Prisma (lee .env.local)
 ├── index.html                  Carga Google Fonts en <head>
-├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, @anthropic-ai/sdk, prisma, zod, pptxgenjs 3.12
+├── package.json                deps: react 18, lucide-react, tailwind 3, vite 5, @anthropic-ai/sdk, prisma, zod, pptxgenjs 3.12, @supabase/supabase-js, jose
 ├── vercel.json                 maxDuration por función (analyze.js 300s, presentation.js 60s)
 ├── vite.config.js              plugin-react
 ├── tailwind.config.js          extend con paleta tt-*
 ├── postcss.config.js           tailwind + autoprefixer
-├── .github/workflows/ci.yml    CI: test:coverage + build en push/PR a main/develop
+├── .env.example                plantilla de variables por entorno (versionada, sin secretos)
+├── .github/workflows/
+│   ├── ci.yml                  CI: test:coverage + build en push/PR a main/develop
+│   └── migrate.yml             migrate deploy → staging (push develop) / prod (push main, con gate de aprobación)
 ├── .gitignore
 ├── README.md                   instrucciones de despliegue
 └── src/
-    ├── main.jsx                entry ReactDOM + QueryClientProvider (TanStack Query)
+    ├── main.jsx                entry ReactDOM + QueryClientProvider + <AuthGate/>
+    ├── AuthGate.jsx            gate de sesión: sin sesión → <Login/>, con sesión → <App user onSignOut/>
     ├── App.jsx                 shell (~130 líneas): navegación + hooks de Query + modal
     ├── theme.js                paleta de colores centralizada (tokens), importada por componentes y vistas
     ├── index.css               @tailwind directives + @keyframes pulse + @keyframes indeterminate
     ├── logic.js                lógica pura (formateo, computeDashboardKpis, getLotesSumMismatch) + tests
-    ├── api/pliegos.js          cliente fetch (listPliegos, analyzePdf, updatePliego, updateAnalysis, generatePresentation, downloadBlob) + normalización de fechas
-    ├── components/             Sidebar, StatusBadge, UploadModal, section.jsx, fields.jsx
-    ├── views/                  Dashboard.jsx, Analysis.jsx (presentacionales) + sus *.test.jsx
+    ├── lib/supabase.js         cliente Supabase Auth (magic link, authHeader, signOut) — glue de IO
+    ├── hooks/useSession.js     sesión de Supabase como estado React (undefined=cargando/null/Session)
+    ├── api/pliegos.js          cliente fetch con apiFetch (Bearer token + 401→signOut) + normalización de fechas
+    ├── components/             Sidebar (usuario real + logout), StatusBadge, UploadModal, section.jsx, fields.jsx
+    ├── views/                  Dashboard.jsx, Analysis.jsx (presentacionales), Login.jsx + sus *.test.jsx
     └── generated/prisma/       Cliente Prisma generado (gitignored, se regenera con `prisma generate`/postinstall)
 ```
 
@@ -254,7 +292,9 @@ tcct-pliegos/
 - `src/api/pliegos.js` — cliente HTTP + normalización BD→UI de fechas.
 - Ya **no hay `MOCK_PLIEGOS`/`MOCK_ANALYSIS` en el frontend**; los datos demo viven solo en `prisma/seed.js`.
 
-**No usa (todavía)**: routing library (solo state en `App`), autenticación, localStorage/sessionStorage. Desde la Fase 3 el frontend consume la API real (Supabase vía Prisma) con TanStack Query — un análisis editado sobrevive a recargar la página.
+**Autenticación (implementada, mergeada a `main`)**: Supabase Auth con **magic link invite-only** (`src/lib/supabase.js`, `src/hooks/useSession.js`, `src/views/Login.jsx`, `src/AuthGate.jsx`) + guard `requireUser` que verifica el JWT en **todos** los endpoints (`api/_lib/auth.js`). El cliente adjunta el Bearer token en cada fetch (`apiFetch` en `src/api/pliegos.js`); un 401 cierra sesión y vuelve al login. Tests con JWTs reales firmados (`api/_lib/testAuth.js`, sin `vi.mock`). **Aún NO hay multi-tenancy** (modelo `Pliego` sigue global, sin `organizationId`) — eso es el Bloque 3 (`docs/BLOQUE-1`).
+
+**No usa (todavía)**: routing library (solo state en `App`), localStorage/sessionStorage (más allá del que gestiona el SDK de Supabase para la sesión).
 
 ---
 
@@ -297,6 +337,12 @@ npm run build
 ---
 
 ## 10. Backlog identificado
+
+> 🕰️ **SECCIÓN SUPERADA (histórico).** Este backlog es de la etapa "herramienta interna". Tras el
+> pivot a B2B SaaS (ver banner al inicio), estas features (comparativa, generador RFP, export Excel,
+> filtro dashboard) quedan **aparcadas y despriorizadas** — el producto de features pasa a segundo
+> plano frente a la base SaaS. **El roadmap vigente es el de `docs/` (Bloques 0-6).** Lo marcado
+> `[x]` aquí sigue siendo cierto (histórico de lo construido); lo `[ ]` NO es el plan actual.
 
 **Corto plazo (iteración de mockup)**:
 - [x] Modal de upload con drag & drop del PDF — valida que sea PDF, llama a `/api/analyze` de verdad y navega al análisis persistido.
@@ -369,6 +415,13 @@ Los 5 bloques del flujo TCCT y los cuellos de botella identificados (por si el p
 
 ## 14. Próxima iniciativa: autenticación + control de acceso (demo → producto)
 
+> 🕰️ **SECCIÓN SUPERADA (histórico).** (1) La auth **ya está implementada y mergeada a `main`**
+> (Supabase magic link invite-only + guard `requireUser`/JWT en todos los endpoints) — ya no es
+> "próxima iniciativa". (2) El modelo descrito aquí (*"workspace compartido de equipo"*, `teamId`,
+> pregunta abierta del *"SSO de Telefónica"*) quedó **reemplazado por el pivot a B2B SaaS**: ahora
+> es **multi-tenant por organización** (ver `docs/BLOQUE-1-DISENO-TENANCY.md`). No uses esta sección
+> como diseño; se conserva solo como registro de cómo se llegó hasta aquí.
+
 **Decisión (15/07/2026)**: el proyecto deja de ser demo. El equipo de presales lo usará en **semanas** y van a entrar **expedientes reales con datos sensibles ya**. Consecuencia: la **autenticación pasa a ser prerrequisito bloqueante** antes de añadir más features — hoy ningún endpoint tiene control de acceso y la URL de Vercel es pública, así que cualquiera con el enlace puede leer/editar/borrar todos los pliegos.
 
 **Plan por fases** (a implementar como iniciativa propia, estilo "full-stack sólido"):
@@ -381,4 +434,4 @@ Los 5 bloques del flujo TCCT y los cuellos de botella identificados (por si el p
 
 ---
 
-*Última actualización: 15/07/2026 · Feature "Generar presentación PowerPoint" completado (rama `feat/presentation`): botón en `Analysis`, endpoint `POST /api/pliegos/[id]/presentation`, builder/renderer con pptxgenjs 3.12, síntesis del resumen final vía Claude; 206 tests. Giro estratégico: el proyecto pasa de demo a producto de uso real — la próxima iniciativa es autenticación + control de acceso (§14), prerrequisito bloqueante antes de más features.*
+*Última actualización: 21/07/2026 · **Pivot a B2B SaaS comercial** (ver banner al inicio y `docs/`). Hitos desde la última nota: auth Supabase magic link invite-only + guard JWT en toda la API (mergeado a `main`, PR #17); 242 tests. Roadmap SaaS Bloques 0-2 completados (arquitectura + diseño tenancy + pipeline de entornos dev/staging, docs en `docs/`). **Siguiente: Bloque 3 — multi-tenancy** (orgs/memberships/RLS/tests de aislamiento) en rama `feat/tenancy`. Las §2/§10/§14 de este doc son histórico de la etapa "herramienta interna".*

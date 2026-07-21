@@ -139,17 +139,17 @@ aviso en vez de fallar en rojo. El pipeline se activa solo al completar el runbo
 
 **Anthropic Console**:
 - [x] 5. Crear 3 API keys: `pliegos-dev`, `pliegos-staging`, `pliegos-prod`. Límite de gasto bajo en dev/staging (p.ej. 25€/mes).
-- [ ] 6. Sustituir la key de `.env.local` por `pliegos-dev` (la actual además estaba caducada).
+- [x] 6. Sustituir la key de `.env.local` por `pliegos-dev` (la actual además estaba caducada).
 
 **Vercel** (Settings → Environment Variables):
 - [ ] 7. **Production**: las 5 variables con valores de PROD.
-- [ ] 8. **Preview** con scope a la rama `develop`: las 5 con valores de STAGING.
-- [ ] 9. **Development**: valores de dev (o se omite: `.env.local` + `vercel env pull` ya lo cubren).
+- [x] 8. **Preview** con scope a la rama `develop`: las 5 con valores de STAGING.
+- [x] 9. **Development**: valores de dev (o se omite: `.env.local` + `vercel env pull` ya lo cubren).
 
 **GitHub** (repo → Settings):
-- [ ] 10. Environments → crear `staging` (sin protección) y `production` (**Required reviewers: tú**).
+- [x] 10. Environments → crear `staging` (sin protección) y `production` (**Required reviewers: tú**).
 - [ ] 11. En el environment `staging`: secret `DATABASE_URL` = pooler de staging. En `production`: secret `DATABASE_URL` = pooler de prod.
-- [ ] 12. Comprobar que la rama `develop` existe y está al día con `main` (existe en el repo; conviene resetearla: `git checkout develop && git reset --hard main && git push -f`).
+- [x] 12. Comprobar que la rama `develop` existe y está al día con `main` (existe en el repo; conviene resetearla: `git checkout develop && git reset --hard main && git push -f`).
 
 **Primer viaje del pipeline (la verificación del bloque)**:
 - [ ] 13. Push de este bloque a `develop` → ver en Actions cómo `migrate.yml` aplica el schema a staging (la primera vez aplica TODAS las migraciones: crea las tablas).

@@ -1,7 +1,16 @@
-// Semilla de datos demo — mismos 6 expedientes que hoy viven como MOCK_PLIEGOS/MOCK_ANALYSIS
-// en src/App.jsx. Idempotente (upsert por `expediente`): se puede correr varias veces sin duplicar.
+// Semilla de datos demo — los 6 expedientes de la etapa mockup, ahora colgados de una
+// organización demo (Bloque 3: multi-tenancy). Idempotente (upsert por `slug`/`expediente`):
+// se puede correr varias veces sin duplicar, y re-correrlo tras la migración expand hace de
+// BACKFILL (adjunta organizationId a los pliegos que ya existían sin él).
 import { pathToFileURL } from 'node:url';
 import { parseShortDate } from '../src/logic.js';
+
+// La org demo a la que pertenecen los pliegos del seed (solo dev/staging, jamás prod).
+export const DEMO_ORG = {
+  slug: 'demo',
+  name: 'Organización Demo',
+  plan: 'trial',
+};
 
 export const MOCK_PLIEGOS = [
   {
@@ -148,8 +157,9 @@ export const MOCK_ANALYSIS = {
 
 // Convierte un pliego mock a la fila que espera Prisma (`create`).
 // Extraído para poder testear el mapeo de campos sin tocar la BD real.
-export function toPliegoRow(p) {
+export function toPliegoRow(p, organizationId = null) {
   return {
+    organizationId,
     expediente: p.expediente,
     titulo: p.titulo,
     organismo: p.organismo,
@@ -164,12 +174,33 @@ export function toPliegoRow(p) {
   };
 }
 
+// Crea (o refresca, idempotente por `slug`) la organización demo y la devuelve.
+export async function seedOrganization(prisma, org = DEMO_ORG) {
+  return prisma.organization.upsert({
+    where: { slug: org.slug },
+    update: { name: org.name, plan: org.plan },
+    create: org,
+  });
+}
+
+// Da membership de `owner` en la org a un usuario de Supabase Auth. El userId no puede
+// inventarse aquí (los usuarios viven en el schema `auth`, fuera de Prisma), así que
+// llega por parámetro/entorno; sin él, simplemente no se siembra membership.
+export async function seedOwnerMembership(prisma, organizationId, userId) {
+  if (!userId) return null;
+  return prisma.membership.upsert({
+    where: { userId_organizationId: { userId, organizationId } },
+    update: { role: 'owner' },
+    create: { userId, organizationId, role: 'owner' },
+  });
+}
+
 // Inserta (o actualiza, idempotente por `expediente`) los pliegos demo usando el
 // cliente Prisma que se le pase. Recibir el cliente por parámetro permite inyectar
 // un doble en los tests en lugar de conectar contra Supabase.
-export async function seedPliegos(prisma, pliegos = MOCK_PLIEGOS) {
+export async function seedPliegos(prisma, pliegos = MOCK_PLIEGOS, organizationId = null) {
   for (const p of pliegos) {
-    const row = toPliegoRow(p);
+    const row = toPliegoRow(p, organizationId);
     await prisma.pliego.upsert({
       where: { expediente: p.expediente },
       update: row,
@@ -191,8 +222,12 @@ async function main() {
   const prisma = new PrismaClient({ adapter });
 
   try {
-    const count = await seedPliegos(prisma);
-    console.log(`Seed completado: ${count} pliegos.`);
+    const org = await seedOrganization(prisma);
+    const count = await seedPliegos(prisma, MOCK_PLIEGOS, org.id);
+    // Opcional: SEED_OWNER_USER_ID (uuid de Authentication → Users en Supabase) te hace
+    // owner de la org demo, para poder entrar con tu usuario cuando el API exija membership.
+    const membership = await seedOwnerMembership(prisma, org.id, process.env.SEED_OWNER_USER_ID);
+    console.log(`Seed completado: org "${org.slug}", ${count} pliegos${membership ? `, owner ${membership.userId}` : ''}.`);
   } finally {
     await prisma.$disconnect();
   }

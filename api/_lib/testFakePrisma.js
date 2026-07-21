@@ -4,13 +4,38 @@
 // Prisma de verdad—, create, upsert) para no depender de vi.mock ni de una BD real.
 // Guardado internamente por `id`; `upsert` (que usa `where.expediente`) busca por
 // ese campo, igual que hace Prisma de verdad con una columna @unique distinta de la PK.
+//
+// Desde el Bloque 3 el doble también modela el tenancy mínimo que consume
+// requireMember (authz.js): `organizations` (por id) y `memberships` (por PK compuesta
+// userId+organizationId, con `include: { organization }`).
 let counter = 0;
 
-export function createFakePliegoPrisma(seedRows = []) {
+export function createFakePliegoPrisma(seedRows = [], { organizations = [], memberships = [] } = {}) {
   const rows = new Map(seedRows.map((r) => [r.id, { ...r }]));
   const findByExpediente = (expediente) => [...rows.values()].find((r) => r.expediente === expediente);
+  const orgs = new Map(organizations.map((o) => [o.id, { deletedAt: null, ...o }]));
+  const members = new Map(
+    memberships.map((m) => [`${m.userId}:${m.organizationId}`, { role: 'member', ...m }]),
+  );
 
   return {
+    organization: {
+      async findUnique({ where }) {
+        return orgs.get(where.id) ?? null;
+      },
+    },
+    membership: {
+      async findUnique({ where, include } = {}) {
+        const { userId, organizationId } = where.userId_organizationId;
+        const found = members.get(`${userId}:${organizationId}`);
+        if (!found) return null;
+        const result = { ...found };
+        if (include?.organization) {
+          result.organization = orgs.get(organizationId) ?? null;
+        }
+        return result;
+      },
+    },
     pliego: {
       async findMany({ orderBy } = {}) {
         const all = [...rows.values()];

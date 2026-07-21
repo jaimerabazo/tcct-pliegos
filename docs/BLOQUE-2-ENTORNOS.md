@@ -168,7 +168,7 @@ aviso en vez de fallar en rojo. El pipeline se activa solo al completar el runbo
 
 **GitHub** (repo → Settings):
 - [x] 10. Environments → crear `staging` (sin protección) y `production` (**Required reviewers: tú**) — el de production queda creado pero dormido hasta que exista prod.
-- [ ] 11. En el environment `staging`: secret `DATABASE_URL` = **Session pooler de staging** . El de `production` se rellena cuando exista prod.
+- [x] 11. En el environment `staging`: secret `DATABASE_URL` = **Session pooler de staging** . El de `production` se rellena cuando exista prod.
 - [x] 12. Comprobar que la rama `develop` existe y está al día con `main`.
 
 **Primer viaje del pipeline (la verificación del bloque)**:

@@ -22,6 +22,7 @@ export default defineConfig({
         'src/api/pliegos.js',
         'api/_lib/schemas.js',
         'api/_lib/auth.js',
+        'api/_lib/authz.js',
         'api/_lib/presentationBuilder.js',
         'api/pliegos/index.js',
         'api/pliegos/[id].js',

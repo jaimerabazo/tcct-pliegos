@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { listPliegos, updatePliego, updateAnalysis } from './api/pliegos.js';
+import { tenantQueryKeys } from './queryKeys.js';
 import { resolveSelectedPliegoId } from './logic.js';
 import { Sidebar } from './components/Sidebar.jsx';
 import { UploadModal } from './components/UploadModal.jsx';
@@ -12,18 +13,21 @@ import { theme } from './theme.js';
 // Shell de la app: navegación (dashboard ↔ análisis), estado de servidor vía TanStack
 // Query (la lista de pliegos es la única fuente de verdad) y el modal de subida. Los
 // datos y callbacks bajan a las vistas presentacionales (Dashboard/Analysis) por props.
-export default function App({ user, onSignOut }) {
+export default function App({ user, org, onSignOut }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState('dashboard');
   const [selectedId, setSelectedId] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
 
+  const pliegosQueryKey = tenantQueryKeys.pliegos(user.id, org.id);
   const { data: pliegos = [], isLoading, isFetching, isError, error } = useQuery({
-    queryKey: ['pliegos'],
+    // La lista pertenece a una combinación usuario/organización concreta. Al cambiar
+    // cualquiera, App entra en carga en vez de pintar el tenant cacheado anterior.
+    queryKey: pliegosQueryKey,
     queryFn: listPliegos,
   });
 
-  const invalidatePliegos = () => queryClient.invalidateQueries({ queryKey: ['pliegos'] });
+  const invalidatePliegos = () => queryClient.invalidateQueries({ queryKey: pliegosQueryKey });
 
   const updatePliegoMutation = useMutation({
     mutationFn: ({ id, patch }) => updatePliego(id, patch),

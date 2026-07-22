@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listMyOrgs } from './api/orgs.js';
 import { getActiveOrgId, setActiveOrgId } from './api/http.js';
 import App from './App.jsx';
+import { tenantQueryKeys } from './queryKeys.js';
 import { theme } from './theme.js';
 
 // Elige la org activa: la guardada si sigue siendo válida; si no, la primera.
@@ -30,7 +31,9 @@ function CenteredScreen({ children }) {
 
 export function OrgGate({ user, onSignOut }) {
   const { data: orgs, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['orgs'],
+    // El QueryClient sobrevive al sign-out. Separar por usuario impide que una sesión
+    // nueva resuelva su org activa con memberships cacheadas de la anterior.
+    queryKey: tenantQueryKeys.orgs(user.id),
     queryFn: listMyOrgs,
   });
 

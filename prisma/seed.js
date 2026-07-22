@@ -1,7 +1,7 @@
 // Semilla de datos demo — los 6 expedientes de la etapa mockup, ahora colgados de una
 // organización demo (Bloque 3: multi-tenancy). Idempotente (upsert por `slug`/`expediente`):
-// se puede correr varias veces sin duplicar, y re-correrlo tras la migración expand hace de
-// BACKFILL (adjunta organizationId a los pliegos que ya existían sin él).
+// se puede correr varias veces sin duplicar. La adopción de TODAS las filas pre-tenancy
+// pertenece a la migración 20260722123000; el seed solo refresca sus expedientes demo.
 import { pathToFileURL } from 'node:url';
 import { parseShortDate } from '../src/logic.js';
 

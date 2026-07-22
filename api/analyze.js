@@ -250,19 +250,18 @@ export function toPliegoRowFromAnalysis({ pliego, analysis }) {
 // Persiste (o refresca, si esta org ya analizó el mismo expediente) el resultado.
 // Recibe el cliente Prisma por parámetro — mismo patrón de inyección que prisma/seed.js.
 //
-// Bloque 3: la clave natural pasa a ser (organizationId, expediente) — dos orgs pueden
-// analizar el mismo pliego público sin pisarse. No usamos `upsert` porque exigiría el
-// unique compuesto que llega en el contract (fase 5); findFirst scoped + update/create
-// funciona antes y después de esa migración. createdBy/updatedBy: audit ligero.
+// Bloque 3: la clave natural es (organizationId, expediente) — dos orgs pueden analizar
+// el mismo pliego público sin pisarse. El upsert compuesto también evita la carrera de
+// dos análisis simultáneos del mismo expediente dentro de una org.
 export async function persistAnalysis(client, result, { organizationId, userId }) {
   const row = toPliegoRowFromAnalysis(result);
-  const existing = await client.pliego.findFirst({
-    where: { organizationId, expediente: row.expediente },
+  return client.pliego.upsert({
+    where: {
+      organizationId_expediente: { organizationId, expediente: row.expediente },
+    },
+    update: { ...row, updatedBy: userId },
+    create: { ...row, organizationId, createdBy: userId },
   });
-  if (existing) {
-    return client.pliego.update({ where: { id: existing.id }, data: { ...row, updatedBy: userId } });
-  }
-  return client.pliego.create({ data: { ...row, organizationId, createdBy: userId } });
 }
 
 // `client` es inyectable para tests; Vercel llama con dos argumentos → singleton real.

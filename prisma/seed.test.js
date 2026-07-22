@@ -12,7 +12,7 @@ import {
 // Doble en memoria de PrismaClient: implementa lo justo que usa el seed
 // (`pliego.upsert`, `organization.upsert`, `membership.upsert`) más lecturas para
 // verificar. Reproduce la semántica de idempotencia por clave única de cada modelo
-// (`expediente`, `slug` y la PK compuesta userId+organizationId respectivamente).
+// (`organizationId+expediente`, `slug` y la PK compuesta userId+organizationId).
 function createFakePrisma() {
   const rows = new Map();
   const orgs = new Map();
@@ -21,7 +21,8 @@ function createFakePrisma() {
   return {
     pliego: {
       async upsert({ where, update, create }) {
-        const key = where.expediente;
+        const { organizationId, expediente } = where.organizationId_expediente;
+        const key = `${organizationId}:${expediente}`;
         if (rows.has(key)) {
           rows.set(key, { ...rows.get(key), ...update });
         } else {
@@ -30,7 +31,8 @@ function createFakePrisma() {
         return rows.get(key);
       },
       async findUnique({ where }) {
-        return rows.get(where.expediente) ?? null;
+        const { organizationId, expediente } = where.organizationId_expediente;
+        return rows.get(`${organizationId}:${expediente}`) ?? null;
       },
       async count() {
         return rows.size;
@@ -149,9 +151,11 @@ describe('seedPliegos', () => {
     const prisma = createFakePrisma();
     const [uno] = MOCK_PLIEGOS;
 
-    await seedPliegos(prisma, [uno]);
+    await seedPliegos(prisma, [uno], 'org-demo');
 
-    const stored = await prisma.pliego.findUnique({ where: { expediente: uno.expediente } });
+    const stored = await prisma.pliego.findUnique({
+      where: { organizationId_expediente: { organizationId: 'org-demo', expediente: uno.expediente } },
+    });
     expect(stored).not.toBeNull();
     expect(stored.expediente).toBe(uno.expediente);
     expect(stored.titulo).toBe(uno.titulo);
@@ -167,15 +171,15 @@ describe('seedPliegos', () => {
 
   it('siembra los 6 pliegos demo y devuelve el recuento', async () => {
     const prisma = createFakePrisma();
-    const count = await seedPliegos(prisma);
+    const count = await seedPliegos(prisma, MOCK_PLIEGOS, 'org-demo');
     expect(count).toBe(MOCK_PLIEGOS.length);
     expect(await prisma.pliego.count()).toBe(MOCK_PLIEGOS.length);
   });
 
   it('es idempotente: correrlo dos veces no duplica filas', async () => {
     const prisma = createFakePrisma();
-    await seedPliegos(prisma);
-    await seedPliegos(prisma);
+    await seedPliegos(prisma, MOCK_PLIEGOS, 'org-demo');
+    await seedPliegos(prisma, MOCK_PLIEGOS, 'org-demo');
     expect(await prisma.pliego.count()).toBe(MOCK_PLIEGOS.length);
   });
 
@@ -183,31 +187,37 @@ describe('seedPliegos', () => {
     const prisma = createFakePrisma();
     const [uno] = MOCK_PLIEGOS;
 
-    await seedPliegos(prisma, [uno]);
+    await seedPliegos(prisma, [uno], 'org-demo');
 
     // Simula un cambio en los mocks de demo (título, importe, etc.).
     const editado = { ...uno, titulo: 'Título actualizado', importe: 99999999 };
-    await seedPliegos(prisma, [editado]);
+    await seedPliegos(prisma, [editado], 'org-demo');
 
-    const stored = await prisma.pliego.findUnique({ where: { expediente: uno.expediente } });
+    const stored = await prisma.pliego.findUnique({
+      where: { organizationId_expediente: { organizationId: 'org-demo', expediente: uno.expediente } },
+    });
     expect(await prisma.pliego.count()).toBe(1);
     expect(stored.titulo).toBe('Título actualizado');
     expect(stored.importe).toBe(99999999);
   });
 
-  it('cuelga los pliegos de la org y hace de backfill sobre filas pre-tenancy', async () => {
+  it('permite el mismo expediente en dos organizaciones sin sobrescribirlo', async () => {
     const prisma = createFakePrisma();
     const [uno] = MOCK_PLIEGOS;
 
-    // Fila sembrada ANTES de la migración expand (sin organizationId)...
-    await seedPliegos(prisma, [uno]);
-    let stored = await prisma.pliego.findUnique({ where: { expediente: uno.expediente } });
-    expect(stored.organizationId).toBeNull();
+    await seedPliegos(prisma, [uno], 'org-a');
+    await seedPliegos(prisma, [uno], 'org-b');
 
-    // ...re-sembrar con la org la adopta (backfill), sin duplicar.
-    await seedPliegos(prisma, [uno], 'org-demo');
-    stored = await prisma.pliego.findUnique({ where: { expediente: uno.expediente } });
-    expect(await prisma.pliego.count()).toBe(1);
-    expect(stored.organizationId).toBe('org-demo');
+    expect(await prisma.pliego.count()).toBe(2);
+    expect(await prisma.pliego.findUnique({
+      where: { organizationId_expediente: { organizationId: 'org-a', expediente: uno.expediente } },
+    })).toMatchObject({ organizationId: 'org-a' });
+    expect(await prisma.pliego.findUnique({
+      where: { organizationId_expediente: { organizationId: 'org-b', expediente: uno.expediente } },
+    })).toMatchObject({ organizationId: 'org-b' });
+  });
+
+  it('rechaza una ejecución sin organización explícita', async () => {
+    await expect(seedPliegos(createFakePrisma(), [MOCK_PLIEGOS[0]])).rejects.toThrow(/organizationId/);
   });
 });

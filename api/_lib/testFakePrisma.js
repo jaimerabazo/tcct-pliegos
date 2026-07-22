@@ -2,8 +2,8 @@
 // Mismo espíritu que el doble de prisma/seed.test.js: implementa lo justo del
 // cliente real (findMany, findUnique, update —lanzando P2025 si no existe, como
 // Prisma de verdad—, create, upsert) para no depender de vi.mock ni de una BD real.
-// Guardado internamente por `id`; `upsert` (que usa `where.expediente`) busca por
-// ese campo, igual que hace Prisma de verdad con una columna @unique distinta de la PK.
+// Guardado internamente por `id`; la unicidad de negocio es el compuesto
+// (organizationId, expediente), igual que en el schema de producción.
 //
 // Desde el Bloque 3 el doble también modela el tenancy mínimo que consume
 // requireMember (authz.js): `organizations` (por id) y `memberships` (por PK compuesta
@@ -12,7 +12,8 @@ let counter = 0;
 
 export function createFakePliegoPrisma(seedRows = [], { organizations = [], memberships = [] } = {}) {
   const rows = new Map(seedRows.map((r) => [r.id, { ...r }]));
-  const findByExpediente = (expediente) => [...rows.values()].find((r) => r.expediente === expediente);
+  const findByTenantExpediente = ({ organizationId, expediente }) => [...rows.values()]
+    .find((r) => r.organizationId === organizationId && r.expediente === expediente);
   const orgs = new Map(organizations.map((o) => [o.id, { deletedAt: null, ...o }]));
   const members = new Map(
     memberships.map((m) => [`${m.userId}:${m.organizationId}`, { role: 'member', ...m }]),
@@ -85,13 +86,18 @@ export function createFakePliegoPrisma(seedRows = [], { organizations = [], memb
         return updated;
       },
       async create({ data }) {
+        if (findByTenantExpediente(data)) {
+          const err = new Error('Unique constraint failed on (organizationId, expediente).');
+          err.code = 'P2002';
+          throw err;
+        }
         const id = `test-id-${++counter}`;
         const row = { id, createdAt: new Date(), updatedAt: new Date(), ...data };
         rows.set(id, row);
         return row;
       },
       async upsert({ where, update, create }) {
-        const existing = findByExpediente(where.expediente);
+        const existing = findByTenantExpediente(where.organizationId_expediente);
         if (existing) {
           const updated = { ...existing, ...update, updatedAt: new Date() };
           rows.set(existing.id, updated);

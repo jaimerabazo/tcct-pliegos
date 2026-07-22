@@ -195,14 +195,15 @@ export async function seedOwnerMembership(prisma, organizationId, userId) {
   });
 }
 
-// Inserta (o actualiza, idempotente por `expediente`) los pliegos demo usando el
+// Inserta (o actualiza, idempotente por `organizationId+expediente`) los pliegos demo usando el
 // cliente Prisma que se le pase. Recibir el cliente por parámetro permite inyectar
 // un doble en los tests en lugar de conectar contra Supabase.
-export async function seedPliegos(prisma, pliegos = MOCK_PLIEGOS, organizationId = null) {
+export async function seedPliegos(prisma, pliegos = MOCK_PLIEGOS, organizationId) {
+  if (!organizationId) throw new Error('seedPliegos requiere una organizationId.');
   for (const p of pliegos) {
     const row = toPliegoRow(p, organizationId);
     await prisma.pliego.upsert({
-      where: { expediente: p.expediente },
+      where: { organizationId_expediente: { organizationId, expediente: p.expediente } },
       update: row,
       create: row,
     });

@@ -1,7 +1,7 @@
 // Semilla de datos demo — los 6 expedientes de la etapa mockup, ahora colgados de una
 // organización demo (Bloque 3: multi-tenancy). Idempotente (upsert por `slug`/`expediente`):
-// se puede correr varias veces sin duplicar, y re-correrlo tras la migración expand hace de
-// BACKFILL (adjunta organizationId a los pliegos que ya existían sin él).
+// se puede correr varias veces sin duplicar. La adopción de TODAS las filas pre-tenancy
+// pertenece a la migración 20260722123000; el seed solo refresca sus expedientes demo.
 import { pathToFileURL } from 'node:url';
 import { parseShortDate } from '../src/logic.js';
 
@@ -195,14 +195,15 @@ export async function seedOwnerMembership(prisma, organizationId, userId) {
   });
 }
 
-// Inserta (o actualiza, idempotente por `expediente`) los pliegos demo usando el
+// Inserta (o actualiza, idempotente por `organizationId+expediente`) los pliegos demo usando el
 // cliente Prisma que se le pase. Recibir el cliente por parámetro permite inyectar
 // un doble en los tests en lugar de conectar contra Supabase.
-export async function seedPliegos(prisma, pliegos = MOCK_PLIEGOS, organizationId = null) {
+export async function seedPliegos(prisma, pliegos = MOCK_PLIEGOS, organizationId) {
+  if (!organizationId) throw new Error('seedPliegos requiere una organizationId.');
   for (const p of pliegos) {
     const row = toPliegoRow(p, organizationId);
     await prisma.pliego.upsert({
-      where: { expediente: p.expediente },
+      where: { organizationId_expediente: { organizationId, expediente: p.expediente } },
       update: row,
       create: row,
     });

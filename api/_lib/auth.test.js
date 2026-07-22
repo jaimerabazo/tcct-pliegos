@@ -72,8 +72,20 @@ describe('getUserFromRequest (HS256, secret compartido)', () => {
   });
 });
 
-describe('getUserFromRequest (JWKS remoto)', () => {
-  it('sin secret configurado usa el JWKS remoto; si no es alcanzable, devuelve null (falla cerrado)', async () => {
+describe('getUserFromRequest (JWKS remoto, selección por alg del token)', () => {
+  // Firma un ES256 (asimétrico): el guard debe enrutarlo al JWKS, no al secret.
+  async function es256Token() {
+    const { privateKey } = await generateKeyPair('ES256');
+    return new SignJWT({ email: 'x@test.local' })
+      .setProtectedHeader({ alg: 'ES256' })
+      .setSubject('user-ecc')
+      .setAudience('authenticated')
+      .setIssuedAt()
+      .setExpirationTime('1h')
+      .sign(privateKey);
+  }
+
+  it('un token ES256 se verifica vía JWKS; si el JWKS no es alcanzable, null (falla cerrado)', async () => {
     // createRemoteJWKSet no toca la red al crearse, solo al verificar: apuntamos a un
     // puerto cerrado para que el fetch falle rápido y caiga en nuestro catch → null.
     const prevSecret = process.env.SUPABASE_JWT_SECRET;
@@ -81,13 +93,54 @@ describe('getUserFromRequest (JWKS remoto)', () => {
     delete process.env.SUPABASE_JWT_SECRET;
     process.env.SUPABASE_URL = 'http://127.0.0.1:1';
     try {
-      const token = await signTestToken();
-      const user = await getUserFromRequest({ headers: { authorization: `Bearer ${token}` } });
+      const user = await getUserFromRequest({ headers: { authorization: `Bearer ${await es256Token()}` } });
       expect(user).toBeNull();
     } finally {
       process.env.SUPABASE_JWT_SECRET = prevSecret;
       if (prevUrl === undefined) delete process.env.SUPABASE_URL;
       else process.env.SUPABASE_URL = prevUrl;
+    }
+  });
+
+  it('un SUPABASE_JWT_SECRET residual NO se usa para un token ES256 (el bug del bucle de login)', async () => {
+    // Escenario real: vercel dev inyecta un secret HS256 del proyecto Vercel, pero el
+    // proyecto firma ES256. La selección por `alg` debe ignorar el secret y ir al JWKS
+    // (aquí inalcanzable → null, sin colgarse ni verificar con el secret equivocado).
+    const prevSecret = process.env.SUPABASE_JWT_SECRET;
+    const prevUrl = process.env.SUPABASE_URL;
+    process.env.SUPABASE_JWT_SECRET = 'secret-residual-hs256';
+    process.env.SUPABASE_URL = 'http://127.0.0.1:1';
+    try {
+      const user = await getUserFromRequest({ headers: { authorization: `Bearer ${await es256Token()}` } });
+      expect(user).toBeNull();
+    } finally {
+      if (prevSecret === undefined) delete process.env.SUPABASE_JWT_SECRET;
+      else process.env.SUPABASE_JWT_SECRET = prevSecret;
+      if (prevUrl === undefined) delete process.env.SUPABASE_URL;
+      else process.env.SUPABASE_URL = prevUrl;
+    }
+  });
+
+  it('cae a VITE_SUPABASE_URL para el JWKS si no hay SUPABASE_URL', async () => {
+    const prevSecret = process.env.SUPABASE_JWT_SECRET;
+    const prevUrl = process.env.SUPABASE_URL;
+    const prevVite = process.env.VITE_SUPABASE_URL;
+    delete process.env.SUPABASE_JWT_SECRET;
+    delete process.env.SUPABASE_URL;
+    process.env.VITE_SUPABASE_URL = 'http://127.0.0.1:1';
+    try {
+      // Sin ninguna URL fallaría por "no key"; con VITE_SUPABASE_URL sí intenta el JWKS
+      // (inalcanzable) → null. Que devuelva null por fallo de red (no por falta de config)
+      // prueba que tomó el camino JWKS con la URL del front.
+      const user = await getUserFromRequest({ headers: { authorization: `Bearer ${await es256Token()}` } });
+      expect(user).toBeNull();
+    } finally {
+      if (prevSecret === undefined) delete process.env.SUPABASE_JWT_SECRET;
+      else process.env.SUPABASE_JWT_SECRET = prevSecret;
+      if (prevUrl === undefined) delete process.env.SUPABASE_URL;
+      else process.env.SUPABASE_URL = prevUrl;
+      if (prevVite === undefined) delete process.env.VITE_SUPABASE_URL;
+      else process.env.VITE_SUPABASE_URL = prevVite;
     }
   });
 });

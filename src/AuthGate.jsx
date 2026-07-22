@@ -4,7 +4,7 @@
 import { useSession } from './hooks/useSession.js';
 import { signOut } from './lib/supabase.js';
 import { Login } from './views/Login.jsx';
-import App from './App.jsx';
+import { OrgGate } from './OrgGate.jsx';
 import { theme } from './theme.js';
 
 export function AuthGate() {
@@ -20,8 +20,10 @@ export function AuthGate() {
     return <Login />;
   }
 
+  // Con sesión: OrgGate resuelve la organización activa antes de montar la app
+  // (Bloque 3 — toda llamada a la API necesita X-Organization-Id).
   return (
-    <App
+    <OrgGate
       user={{ email: session.user?.email ?? '', id: session.user?.id ?? '' }}
       onSignOut={signOut}
     />

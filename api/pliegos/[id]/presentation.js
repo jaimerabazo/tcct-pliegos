@@ -1,8 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { prisma } from '../../_lib/prisma.js';
 import { presentationRequestSchema, presentationContentSchema } from '../../_lib/schemas.js';
 import { buildSlideSpecs, presentationFilename } from '../../_lib/presentationBuilder.js';
 import { renderPptx } from '../../_lib/presentationRenderer.js';
-import { requireUser } from '../../_lib/auth.js';
+import { requireMember } from '../../_lib/authz.js';
+import { recordUsage } from '../../_lib/usage.js';
 
 // Generación más rápida que /api/analyze (no sube un PDF, solo sintetiza un resumen
 // corto sobre datos ya estructurados). 60s sobra; ver también vercel.json.
@@ -80,12 +82,43 @@ function buildAnalysisContext(pliego) {
   return JSON.stringify({ cabecera, analisis: analysisData });
 }
 
-export default async function handler(req, res) {
-  const user = await requireUser(req, res);
-  if (!user) return; // requireUser ya ha respondido 401/500
+// Carga scoped para que un ID de otro tenant sea indistinguible de uno inexistente.
+export async function getPresentationPliego(client, id, organizationId) {
+  return client.pliego.findFirst({ where: { id, organizationId } });
+}
+
+// Prisma devuelve fechaLimite como Date, mientras el schema del transporte acepta el
+// string normalizado que usa el frontend. El resto de la fila puede validarse tal cual.
+function toPresentationInput(row) {
+  return {
+    ...row,
+    fechaLimite: row.fechaLimite instanceof Date ? row.fechaLimite.toISOString() : row.fechaLimite,
+  };
+}
+
+// Bloque 3: el guard verifica membership y después recargamos el pliego scoped. El body
+// cliente deja de ser fuente de datos para Claude: evita presentar información stale o
+// manipulada y garantiza que metering/render pertenecen a ctx.orgId.
+// `client` es inyectable para tests; Vercel llama con dos argumentos → singleton real.
+export default async function handler(req, res, client = prisma) {
+  const ctx = await requireMember(req, res, { client });
+  if (!ctx) return; // requireMember ya ha respondido 400/401/403/500
 
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Método no permitido.' });
+    return;
+  }
+
+  let storedPliego;
+  try {
+    storedPliego = await getPresentationPliego(client, req.query?.id, ctx.orgId);
+  } catch (err) {
+    console.error('Error verificando el pliego para la presentación:', err);
+    res.status(500).json({ error: 'No se ha podido verificar el pliego.' });
+    return;
+  }
+  if (!storedPliego) {
+    res.status(404).json({ error: 'Pliego no encontrado.' });
     return;
   }
 
@@ -94,8 +127,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  // El frontend manda su pliego cacheado (cabecera + analysisData); no releemos de la BD.
-  const parsed = presentationRequestSchema.safeParse(req.body);
+  const parsed = presentationRequestSchema.safeParse(toPresentationInput(storedPliego));
   if (!parsed.success) {
     res.status(400).json({ error: 'El pliego no es válido o no está analizado.', details: parsed.error.flatten() });
     return;
@@ -132,6 +164,17 @@ export default async function handler(req, res) {
       res.status(502).json({ error: 'Claude ha devuelto un JSON válido, pero no coincide con el formato esperado.' });
       return;
     }
+
+    // Metering: una fila por operación LLM (no lanza nunca — la presentación no debe
+    // fallar porque el metering falle).
+    await recordUsage(client, {
+      organizationId: ctx.orgId,
+      userId: ctx.user.id,
+      type: 'presentation',
+      model: MODEL,
+      usage: response.usage,
+      pliegoId: pliego.id,
+    });
 
     const { tagline, resumenFinal } = check.data;
     const specs = buildSlideSpecs({ pliego, analysisData: pliego.analysisData, tagline, resumenFinal });

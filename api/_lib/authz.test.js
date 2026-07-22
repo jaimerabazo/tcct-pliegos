@@ -1,6 +1,6 @@
 // @vitest-environment node
 // (los tests de API firman JWTs con jose, que falla bajo jsdom; no necesitan DOM)
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 // Importar testAuth.js instala el secret de test en process.env (side effect documentado).
 import { TEST_USER, authHeaders } from './testAuth.js';
 import { createFakePliegoPrisma } from './testFakePrisma.js';
@@ -48,6 +48,21 @@ describe('requireMember', () => {
     expect(ctx).toBeNull();
     expect(res.statusCode).toBe(403);
     expect(res.body.error).toMatch(/organización/i);
+  });
+
+  it('500 JSON si falla la consulta de membership', async () => {
+    const client = fakeClient();
+    client.membership.findUnique = async () => { throw new Error('database unavailable'); };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = createFakeRes();
+
+    const ctx = await requireMember(await reqFor('org-a'), res, { client });
+
+    expect(ctx).toBeNull();
+    expect(res.statusCode).toBe(500);
+    expect(res.body.error).toMatch(/verificar el acceso/i);
+    expect(consoleError).toHaveBeenCalledOnce();
+    consoleError.mockRestore();
   });
 
   it('403 si la org está desactivada (soft-delete, decisión D3) aunque haya membership', async () => {

@@ -122,13 +122,10 @@ export const pliegoPatchSchema = z.object({
 
 // --- Exportación a PowerPoint (api/pliegos/[id]/presentation.js) ---
 //
-// Body de la petición de generación: el frontend manda su pliego cacheado (que ya
-// incluye analysisData) para que el endpoint NO tenga que releer de la BD (decisión
-// de eficiencia — la función no necesita Prisma ni DATABASE_URL). Se valida de forma
-// defensiva: la cabecera de forma laxa (viene de nuestra propia API, `.passthrough()`
-// tolera id/estado/fechaAnalisis/etc.) y `analysisData` de forma estricta con
-// analysisDataSchema. Si el pliego no está analizado, analysisData es null → falla la
-// validación → 400 (además la UI deshabilita el botón en ese caso).
+// Fila scoped que el endpoint relee de la BD antes de generar. Se valida de forma
+// defensiva: la cabecera de forma laxa (`.passthrough()` tolera id/estado/fechas/etc.)
+// y `analysisData` de forma estricta. Si el pliego no está analizado, analysisData es
+// null y la generación responde 400 (la UI también deshabilita el botón).
 export const presentationRequestSchema = z.object({
   expediente: z.string().min(1),
   titulo: z.string().min(1),

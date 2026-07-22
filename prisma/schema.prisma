@@ -2,8 +2,8 @@
 // Diseño de tenancy: docs/BLOQUE-1-DISENO-TENANCY.md §1. Esta es la migración EXPAND
 // (docs/BLOQUE-2-ENTORNOS.md §3): todo lo nuevo es aditivo y las columnas de tenancy en
 // Pliego son nullable para que el código actual siga funcionando durante la transición.
-// El CONTRACT (organizationId NOT NULL, unicidad por org, RLS) llega en la fase 5 del
-// bloque, cuando ya ninguna escritura entre sin org.
+// La unicidad por org se adelanta para habilitar escrituras multi-tenant; el CONTRACT
+// (organizationId NOT NULL y RLS) llega en la fase 5, cuando nada escriba sin org.
 
 // Generador clásico (JS, no el nuevo "prisma-client" basado en TS) — el proyecto es
 // JS puro (Vite + Vercel Functions sin build de TypeScript), así que evitamos depender
@@ -95,9 +95,7 @@ model Pliego {
   id             String    @id @default(cuid())
   organizationId String? // LA columna del tenancy. Nullable SOLO durante el expand; el
   //                        contract (fase 5) la hace NOT NULL cuando todo escriba scoped.
-  expediente     String    @unique // ⚠️ unicidad GLOBAL heredada de la etapa mono-tenant:
-  //                                  dos orgs analizando el mismo pliego público chocarían.
-  //                                  El contract la sustituye por @@unique([organizationId, expediente]).
+  expediente     String
   titulo         String
   organismo      String
   importe        Float?
@@ -116,6 +114,7 @@ model Pliego {
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, expediente]) // el mismo expediente público puede existir en varios tenants
   @@index([organizationId, fechaAnalisis(sort: Desc)]) // la query del dashboard, tal cual
 }
 

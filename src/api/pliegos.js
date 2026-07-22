@@ -3,26 +3,9 @@
 // de la BD al que consume la UI: las filas de Postgres traen las fechas como ISO,
 // pero los componentes las muestran en formato corto ("15 jul 2026").
 import { formatShortDate } from '../logic.js';
-import { authHeader, signOut } from '../lib/supabase.js';
-
-// fetch con sesión: adjunta el Bearer token de Supabase y, si el servidor responde 401
-// (sesión caducada/revocada), cierra la sesión local — AuthGate reacciona y vuelve al
-// Login. La respuesta se devuelve igualmente para que el llamante lance su error.
-async function apiFetch(url, { headers = {}, ...options } = {}) {
-  const res = await fetch(url, { ...options, headers: { ...(await authHeader()), ...headers } });
-  if (res.status === 401) {
-    await signOut();
-  }
-  return res;
-}
-
-async function jsonOrThrow(res, fallbackMsg) {
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error || `${fallbackMsg} (HTTP ${res.status}).`);
-  }
-  return res.json();
-}
+// El transporte (Bearer token + X-Organization-Id + manejo de 401) vive en http.js
+// desde el Bloque 3 — compartido con el cliente de organizaciones (orgs.js).
+import { apiFetch, jsonOrThrow } from './http.js';
 
 function toShortDate(value) {
   if (!value) return null;
@@ -88,12 +71,10 @@ function filenameFromDisposition(header) {
 // Genera la presentación PowerPoint del pliego. A diferencia del resto de endpoints,
 // la respuesta es un binario (.pptx), no JSON: en éxito devuelve { blob, filename } para
 // que el llamante dispare la descarga; en error el servidor sí responde JSON con { error }.
-// Manda el pliego cacheado (cabecera + analysisData) en el body — el endpoint no relee la BD.
+// Solo manda el ID en la ruta: el servidor relee la fila scoped y no confía en la caché.
 export async function generatePresentation(pliego) {
   const res = await apiFetch(`/api/pliegos/${pliego.id}/presentation`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(pliego),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);

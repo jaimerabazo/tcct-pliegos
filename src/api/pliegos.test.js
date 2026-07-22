@@ -142,11 +142,12 @@ describe('generatePresentation', () => {
     expect(global.fetch).toHaveBeenCalledWith('/api/pliegos/a/presentation', expect.objectContaining({ method: 'POST' }));
   });
 
-  it('manda el pliego completo en el body', async () => {
+  it('no manda datos cacheados del pliego en el body', async () => {
     mockFetchBinary({ blob: new Blob(['x']), disposition: 'attachment; filename="f.pptx"' });
     await generatePresentation(pliego);
     const [, opts] = global.fetch.mock.calls[0];
-    expect(JSON.parse(opts.body)).toEqual(pliego);
+    expect(opts.body).toBeUndefined();
+    expect(opts.headers['Content-Type']).toBeUndefined();
   });
 
   it('cae a un nombre derivado del expediente si no hay Content-Disposition', async () => {

@@ -4,8 +4,19 @@ import { describe, it, expect } from 'vitest';
 import handler, { toPliegoRowFromAnalysis, persistAnalysis } from './analyze.js';
 import { createFakePliegoPrisma } from './_lib/testFakePrisma.js';
 import { createFakeRes } from './_lib/testFakeRes.js';
-import './_lib/testAuth.js'; // instala el secret de test para el guard de auth
+import { authHeaders, TEST_USER } from './_lib/testAuth.js'; // instala el secret de test para el guard
 import { MOCK_ANALYSIS } from '../prisma/seed.js';
+
+const ORG_A = 'org-a';
+const ORG_B = 'org-b';
+const tenancy = {
+  organizations: [
+    { id: ORG_A, name: 'Org A', slug: 'org-a' },
+    { id: ORG_B, name: 'Org B', slug: 'org-b' },
+  ],
+  memberships: [{ userId: TEST_USER.id, organizationId: ORG_A, role: 'member' }],
+};
+const CTX_A = { organizationId: ORG_A, userId: TEST_USER.id };
 
 const sampleResult = {
   pliego: {
@@ -64,42 +75,68 @@ describe('toPliegoRowFromAnalysis', () => {
   });
 });
 
-describe('persistAnalysis', () => {
-  it('crea una fila nueva cuando el expediente no existía', async () => {
-    const prisma = createFakePliegoPrisma([]);
-    const saved = await persistAnalysis(prisma, sampleResult);
+describe('persistAnalysis (scoped por organización)', () => {
+  it('crea una fila nueva con organizationId y createdBy cuando el expediente no existía en la org', async () => {
+    const prisma = createFakePliegoPrisma([], tenancy);
+    const saved = await persistAnalysis(prisma, sampleResult, CTX_A);
     expect(saved.expediente).toBe('2026/9999');
+    expect(saved.organizationId).toBe(ORG_A);
+    expect(saved.createdBy).toBe(TEST_USER.id);
     expect(saved.id).toBeTruthy();
   });
 
-  it('es idempotente: analizar dos veces el mismo expediente actualiza, no duplica', async () => {
-    const prisma = createFakePliegoPrisma([]);
-    await persistAnalysis(prisma, sampleResult);
+  it('es idempotente POR ORG: re-analizar el mismo expediente actualiza (y firma updatedBy), no duplica', async () => {
+    const prisma = createFakePliegoPrisma([], tenancy);
+    await persistAnalysis(prisma, sampleResult, CTX_A);
 
     const segundaVuelta = {
       ...sampleResult,
       pliego: { ...sampleResult.pliego, importe: 2000000 },
     };
-    await persistAnalysis(prisma, segundaVuelta);
+    await persistAnalysis(prisma, segundaVuelta, CTX_A);
 
     const todos = await prisma.pliego.findMany();
     expect(todos).toHaveLength(1);
     expect(todos[0].importe).toBe(2000000);
+    expect(todos[0].updatedBy).toBe(TEST_USER.id);
+  });
+
+  it('dos orgs pueden analizar el MISMO expediente sin pisarse (el bug del @unique global)', async () => {
+    const prisma = createFakePliegoPrisma([], tenancy);
+    await persistAnalysis(prisma, sampleResult, CTX_A);
+    await persistAnalysis(prisma, sampleResult, { organizationId: ORG_B, userId: 'user-de-b' });
+
+    const todos = await prisma.pliego.findMany();
+    expect(todos).toHaveLength(2);
+    expect(new Set(todos.map((p) => p.organizationId))).toEqual(new Set([ORG_A, ORG_B]));
   });
 });
 
 // El handler completo (llamada real a Claude) se verifica a mano, no por CI — pero el
-// guard de auth corre ANTES de leer el body o tocar Claude, así que sí es testeable.
-describe('handler POST /api/analyze — auth', () => {
+// guard de auth/org corre ANTES de leer el body o tocar Claude, así que sí es testeable.
+describe('handler POST /api/analyze — guard', () => {
   it('responde 401 sin token, antes de gastar nada', async () => {
     const res = createFakeRes();
-    await handler({ method: 'POST', headers: {} }, res);
+    await handler({ method: 'POST', headers: {} }, res, createFakePliegoPrisma([], tenancy));
     expect(res.statusCode).toBe(401);
   });
 
   it('responde 401 con token inválido', async () => {
     const res = createFakeRes();
-    await handler({ method: 'POST', headers: { authorization: 'Bearer basura' } }, res);
+    await handler({ method: 'POST', headers: { authorization: 'Bearer basura' } }, res, createFakePliegoPrisma([], tenancy));
     expect(res.statusCode).toBe(401);
+  });
+
+  it('responde 400 sin cabecera X-Organization-Id', async () => {
+    const res = createFakeRes();
+    await handler({ method: 'POST', headers: await authHeaders() }, res, createFakePliegoPrisma([], tenancy));
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('responde 403 si afirma una org donde no tiene membership', async () => {
+    const res = createFakeRes();
+    const headers = { ...(await authHeaders()), 'x-organization-id': ORG_B };
+    await handler({ method: 'POST', headers }, res, createFakePliegoPrisma([], tenancy));
+    expect(res.statusCode).toBe(403);
   });
 });

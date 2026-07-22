@@ -13,7 +13,21 @@ function mockFetchOnce({ ok = true, status = 200, body } = {}) {
   });
 }
 
+function blockActiveOrgStorage() {
+  const originalSetItem = Storage.prototype.setItem;
+  const originalGetItem = Storage.prototype.getItem;
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function setItem(key, value) {
+    if (key === ACTIVE_ORG_KEY) throw new Error('blocked');
+    return originalSetItem.call(this, key, value);
+  });
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function getItem(key) {
+    if (key === ACTIVE_ORG_KEY) throw new Error('blocked');
+    return originalGetItem.call(this, key);
+  });
+}
+
 beforeEach(() => {
+  setActiveOrgId(null);
   localStorage.clear();
 });
 
@@ -37,6 +51,14 @@ describe('org activa (localStorage)', () => {
     setActiveOrgId(null);
     expect(getActiveOrgId()).toBeNull();
   });
+
+  it('conserva la org activa en memoria cuando localStorage lanza', () => {
+    blockActiveOrgStorage();
+
+    setActiveOrgId('org-sin-storage');
+
+    expect(getActiveOrgId()).toBe('org-sin-storage');
+  });
 });
 
 describe('apiFetch', () => {
@@ -46,6 +68,17 @@ describe('apiFetch', () => {
     await apiFetch('/api/pliegos');
     const [, opts] = global.fetch.mock.calls[0];
     expect(opts.headers['X-Organization-Id']).toBe('org-42');
+  });
+
+  it('adjunta X-Organization-Id desde memoria si localStorage está bloqueado', async () => {
+    blockActiveOrgStorage();
+    setActiveOrgId('org-sin-storage');
+    mockFetchOnce({ body: [] });
+
+    await apiFetch('/api/pliegos');
+
+    const [, opts] = global.fetch.mock.calls[0];
+    expect(opts.headers['X-Organization-Id']).toBe('org-sin-storage');
   });
 
   it('NO adjunta la cabecera si no hay org activa (bootstrap: /api/orgs no la necesita)', async () => {

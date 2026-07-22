@@ -5,30 +5,38 @@
 //   (refresh/onAuthStateChange): una respuesta 401 de NUESTRA API no debe borrarla. Un
 //   fallo de configuración del guard JWT también responde 401 y, si cerrásemos sesión
 //   aquí, crearíamos el bucle login → /api/orgs → 401 → login → rate limit.
-// - Adjunta X-Organization-Id con la org activa (localStorage). El header es una
+// - Adjunta X-Organization-Id con la org activa (memoria + localStorage). El header es una
 //   AFIRMACIÓN que el servidor verifica siempre contra memberships (requireMember);
 //   aquí solo declaramos en qué org estamos trabajando.
 import { authHeader } from '../lib/supabase.js';
 
 export const ACTIVE_ORG_KEY = 'activeOrgId';
 
+// Fuente de respaldo durante la vida de la SPA. Algunos navegadores exponen
+// localStorage pero lanzan al leer/escribir (privacidad, almacenamiento bloqueado).
+// OrgGate puede seguir fijando la org activa y apiFetch puede usarla aunque no persista.
+let activeOrgIdInMemory = null;
+
 export function getActiveOrgId() {
   try {
-    return localStorage.getItem(ACTIVE_ORG_KEY);
+    const storedOrgId = localStorage.getItem(ACTIVE_ORG_KEY);
+    if (storedOrgId) activeOrgIdInMemory = storedOrgId;
+    return storedOrgId || activeOrgIdInMemory;
   } catch {
-    return null; // storage inaccesible (SSR, privacidad): sin org activa
+    return activeOrgIdInMemory;
   }
 }
 
 export function setActiveOrgId(orgId) {
+  activeOrgIdInMemory = orgId || null;
   try {
-    if (orgId) {
-      localStorage.setItem(ACTIVE_ORG_KEY, orgId);
+    if (activeOrgIdInMemory) {
+      localStorage.setItem(ACTIVE_ORG_KEY, activeOrgIdInMemory);
     } else {
       localStorage.removeItem(ACTIVE_ORG_KEY);
     }
   } catch {
-    // sin storage no persistimos la elección; la app sigue funcionando en memoria
+    // La selección ya vive en memoria; solo perdemos persistencia entre recargas.
   }
 }
 

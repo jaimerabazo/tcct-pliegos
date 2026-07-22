@@ -1,6 +1,6 @@
 // @vitest-environment node
 // (los tests de API firman JWTs con jose, que falla bajo jsdom; no necesitan DOM)
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import handler, { listPliegos } from './index.js';
 import { createFakePliegoPrisma } from '../_lib/testFakePrisma.js';
 import { createFakeRes } from '../_lib/testFakeRes.js';
@@ -64,6 +64,20 @@ describe('handler GET /api/pliegos', () => {
     const reqHeaders = { ...(await authHeaders()), 'x-organization-id': ORG_B };
     await handler({ method: 'GET', headers: reqHeaders }, res, fakePrisma());
     expect(res.statusCode).toBe(403);
+  });
+
+  it('responde 500 JSON si falla el lookup de membership antes de listar', async () => {
+    const prisma = fakePrisma();
+    prisma.membership.findUnique = async () => { throw new Error('database unavailable'); };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = createFakeRes();
+
+    await handler({ method: 'GET', headers }, res, prisma);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body.error).toMatch(/verificar el acceso/i);
+    expect(consoleError).toHaveBeenCalledOnce();
+    consoleError.mockRestore();
   });
 
   it('responde 405 para métodos que no sean GET', async () => {

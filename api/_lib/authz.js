@@ -32,10 +32,20 @@ export async function requireMember(req, res, opts = {}) {
     return null;
   }
 
-  const membership = await client.membership.findUnique({
-    where: { userId_organizationId: { userId: user.id, organizationId: orgId } },
-    include: { organization: true },
-  });
+  let membership;
+  try {
+    membership = await client.membership.findUnique({
+      where: { userId_organizationId: { userId: user.id, organizationId: orgId } },
+      include: { organization: true },
+    });
+  } catch (err) {
+    // El guard corre antes del try/catch propio de los handlers. Resolver aquí los
+    // fallos de Prisma evita que una caída de BD termine como error no controlado de
+    // la función y mantiene una respuesta JSON coherente en todos los endpoints.
+    console.error('Error verificando membership:', err);
+    res.status(500).json({ error: 'No se ha podido verificar el acceso a la organización.' });
+    return null;
+  }
   if (!membership) {
     res.status(403).json({ error: 'No perteneces a esta organización.' });
     return null;

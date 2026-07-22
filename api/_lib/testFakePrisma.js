@@ -17,6 +17,12 @@ export function createFakePliegoPrisma(seedRows = [], { organizations = [], memb
   const members = new Map(
     memberships.map((m) => [`${m.userId}:${m.organizationId}`, { role: 'member', ...m }]),
   );
+  const usageEvents = [];
+
+  // Igualdad campo a campo contra un `where` plano — suficiente para las queries
+  // scoped ({ id, organizationId }, { organizationId, expediente }) de los handlers.
+  const matchesWhere = (row, where = {}) =>
+    Object.entries(where).every(([key, value]) => (row[key] ?? null) === (value ?? null));
 
   return {
     organization: {
@@ -35,10 +41,27 @@ export function createFakePliegoPrisma(seedRows = [], { organizations = [], memb
         }
         return result;
       },
+      async findMany({ where, include } = {}) {
+        return [...members.values()]
+          .filter((m) => matchesWhere(m, where))
+          .map((m) => (include?.organization
+            ? { ...m, organization: orgs.get(m.organizationId) ?? null }
+            : { ...m }));
+      },
+    },
+    usageEvent: {
+      async create({ data }) {
+        const row = { id: `usage-${usageEvents.length + 1}`, createdAt: new Date(), ...data };
+        usageEvents.push(row);
+        return row;
+      },
+      async findMany({ where } = {}) {
+        return usageEvents.filter((e) => matchesWhere(e, where));
+      },
     },
     pliego: {
-      async findMany({ orderBy } = {}) {
-        const all = [...rows.values()];
+      async findMany({ where, orderBy } = {}) {
+        const all = [...rows.values()].filter((r) => matchesWhere(r, where));
         if (orderBy?.fechaAnalisis === 'desc') {
           all.sort((a, b) => b.fechaAnalisis - a.fechaAnalisis);
         }
@@ -46,6 +69,9 @@ export function createFakePliegoPrisma(seedRows = [], { organizations = [], memb
       },
       async findUnique({ where }) {
         return rows.get(where.id) ?? null;
+      },
+      async findFirst({ where } = {}) {
+        return [...rows.values()].find((r) => matchesWhere(r, where)) ?? null;
       },
       async update({ where, data }) {
         const existing = rows.get(where.id);

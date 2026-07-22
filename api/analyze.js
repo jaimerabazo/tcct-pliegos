@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from './_lib/prisma.js';
 import { pliegoFromAnalysisSchema, analysisDataSchema } from './_lib/schemas.js';
-import { requireUser } from './_lib/auth.js';
+import { requireMember } from './_lib/authz.js';
+import { recordUsage } from './_lib/usage.js';
 import { parseShortDate } from '../src/logic.js';
 
 export const config = {
@@ -246,22 +247,30 @@ export function toPliegoRowFromAnalysis({ pliego, analysis }) {
   };
 }
 
-// Persiste (o refresca, si ya existía el mismo expediente) el resultado de un análisis.
+// Persiste (o refresca, si esta org ya analizó el mismo expediente) el resultado.
 // Recibe el cliente Prisma por parámetro — mismo patrón de inyección que prisma/seed.js.
-export async function persistAnalysis(client, result) {
+//
+// Bloque 3: la clave natural pasa a ser (organizationId, expediente) — dos orgs pueden
+// analizar el mismo pliego público sin pisarse. No usamos `upsert` porque exigiría el
+// unique compuesto que llega en el contract (fase 5); findFirst scoped + update/create
+// funciona antes y después de esa migración. createdBy/updatedBy: audit ligero.
+export async function persistAnalysis(client, result, { organizationId, userId }) {
   const row = toPliegoRowFromAnalysis(result);
-  return client.pliego.upsert({
-    where: { expediente: row.expediente },
-    update: row,
-    create: row,
+  const existing = await client.pliego.findFirst({
+    where: { organizationId, expediente: row.expediente },
   });
+  if (existing) {
+    return client.pliego.update({ where: { id: existing.id }, data: { ...row, updatedBy: userId } });
+  }
+  return client.pliego.create({ data: { ...row, organizationId, createdBy: userId } });
 }
 
-export default async function handler(req, res) {
-  // Guard de auth ANTES de leer el body: sin sesión válida no se gasta ni un byte
-  // (ni una llamada a Claude — este endpoint es el más caro de la app).
-  const user = await requireUser(req, res);
-  if (!user) return; // requireUser ya ha respondido 401/500
+// `client` es inyectable para tests; Vercel llama con dos argumentos → singleton real.
+export default async function handler(req, res, client = prisma) {
+  // Guard de auth Y org ANTES de leer el body: sin sesión válida ni membership no se
+  // gasta ni un byte (ni una llamada a Claude — este endpoint es el más caro de la app).
+  const ctx = await requireMember(req, res, { client });
+  if (!ctx) return; // requireMember ya ha respondido 400/401/403/500
 
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Método no permitido.' });
@@ -330,7 +339,20 @@ export default async function handler(req, res) {
       return;
     }
 
-    const saved = await persistAnalysis(prisma, { pliego: pliegoCheck.data, analysis: analysisCheck.data });
+    const saved = await persistAnalysis(client, { pliego: pliegoCheck.data, analysis: analysisCheck.data }, {
+      organizationId: ctx.orgId,
+      userId: ctx.user.id,
+    });
+
+    // Metering: una fila por operación LLM (no lanza nunca; el análisis ya está a salvo).
+    await recordUsage(client, {
+      organizationId: ctx.orgId,
+      userId: ctx.user.id,
+      type: 'analyze',
+      model: MODEL,
+      usage: response.usage,
+      pliegoId: saved.id,
+    });
     // El frontend (UploadModal → handleUploadComplete) espera { pliego, analysis }, no la fila
     // plana de Prisma. Devolvemos los datos ya validados (pliego con fechaLimite en formato corto,
     // como consume la UI) y adjuntamos el id real de la BD.

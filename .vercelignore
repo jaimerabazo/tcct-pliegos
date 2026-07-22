@@ -1,0 +1,9 @@
+# Los tests viven colocados junto al código (convención del repo), pero Vercel trata
+# todo .js bajo api/ como una función serverless. Sin esto, vercel dev (CLI >= 56)
+# llega a resolver /api/pliegos al entrypoint api/pliegos/index.test.js y la función
+# revienta con "Cannot read properties of undefined (reading 'config')" (el describe()
+# de Vitest ejecutándose fuera de Vitest). Excluirlos arregla dev y aligera el deploy.
+api/**/*.test.js
+api/_lib/testFakePrisma.js
+api/_lib/testFakeRes.js
+api/_lib/testAuth.js

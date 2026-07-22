@@ -20,13 +20,17 @@ export default defineConfig({
       include: [
         'src/logic.js',
         'src/api/pliegos.js',
+        'src/api/http.js',
+        'src/api/orgs.js',
         'api/_lib/schemas.js',
         'api/_lib/auth.js',
         'api/_lib/authz.js',
+        'api/_lib/usage.js',
         'api/_lib/presentationBuilder.js',
         'api/pliegos/index.js',
         'api/pliegos/[id].js',
         'api/pliegos/[id]/analysis.js',
+        'api/orgs/index.js',
       ],
       thresholds: {
         lines: 90,

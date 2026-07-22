@@ -82,9 +82,23 @@ function buildAnalysisContext(pliego) {
   return JSON.stringify({ cabecera, analisis: analysisData });
 }
 
-// Bloque 3: este endpoint ya no es "sin Prisma" — el guard requireMember verifica la
-// membership en BD y el metering escribe su usage_event. El pliego sigue viajando en el
-// body (no se relee de la BD), así que la parte cara sigue siendo igual de ligera.
+// Carga scoped para que un ID de otro tenant sea indistinguible de uno inexistente.
+export async function getPresentationPliego(client, id, organizationId) {
+  return client.pliego.findFirst({ where: { id, organizationId } });
+}
+
+// Prisma devuelve fechaLimite como Date, mientras el schema del transporte acepta el
+// string normalizado que usa el frontend. El resto de la fila puede validarse tal cual.
+function toPresentationInput(row) {
+  return {
+    ...row,
+    fechaLimite: row.fechaLimite instanceof Date ? row.fechaLimite.toISOString() : row.fechaLimite,
+  };
+}
+
+// Bloque 3: el guard verifica membership y después recargamos el pliego scoped. El body
+// cliente deja de ser fuente de datos para Claude: evita presentar información stale o
+// manipulada y garantiza que metering/render pertenecen a ctx.orgId.
 // `client` es inyectable para tests; Vercel llama con dos argumentos → singleton real.
 export default async function handler(req, res, client = prisma) {
   const ctx = await requireMember(req, res, { client });
@@ -95,13 +109,25 @@ export default async function handler(req, res, client = prisma) {
     return;
   }
 
+  let storedPliego;
+  try {
+    storedPliego = await getPresentationPliego(client, req.query?.id, ctx.orgId);
+  } catch (err) {
+    console.error('Error verificando el pliego para la presentación:', err);
+    res.status(500).json({ error: 'No se ha podido verificar el pliego.' });
+    return;
+  }
+  if (!storedPliego) {
+    res.status(404).json({ error: 'Pliego no encontrado.' });
+    return;
+  }
+
   if (!process.env.ANTHROPIC_API_KEY) {
     res.status(500).json({ error: 'Falta configurar ANTHROPIC_API_KEY en el entorno del servidor.' });
     return;
   }
 
-  // El frontend manda su pliego cacheado (cabecera + analysisData); no releemos de la BD.
-  const parsed = presentationRequestSchema.safeParse(req.body);
+  const parsed = presentationRequestSchema.safeParse(toPresentationInput(storedPliego));
   if (!parsed.success) {
     res.status(400).json({ error: 'El pliego no es válido o no está analizado.', details: parsed.error.flatten() });
     return;

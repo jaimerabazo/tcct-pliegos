@@ -71,12 +71,10 @@ function filenameFromDisposition(header) {
 // Genera la presentación PowerPoint del pliego. A diferencia del resto de endpoints,
 // la respuesta es un binario (.pptx), no JSON: en éxito devuelve { blob, filename } para
 // que el llamante dispare la descarga; en error el servidor sí responde JSON con { error }.
-// Manda el pliego cacheado (cabecera + analysisData) en el body — el endpoint no relee la BD.
+// Solo manda el ID en la ruta: el servidor relee la fila scoped y no confía en la caché.
 export async function generatePresentation(pliego) {
   const res = await apiFetch(`/api/pliegos/${pliego.id}/presentation`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(pliego),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);

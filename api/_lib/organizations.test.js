@@ -80,13 +80,13 @@ describe('organizations domain', () => {
     } })).toHaveLength(1);
   });
 
-  it('protege al último owner, pero permite quitarlo si existe otro', async () => {
+  it('protege al último owner sin importar quién lo quite, pero permite quitarlo si existe otro', async () => {
     const oneOwner = createFakePliegoPrisma([], {
       memberships: [{ userId: 'owner-1', organizationId: 'org-a', role: 'owner' }],
     });
     await expect(removeMember(oneOwner, {
       organizationId: 'org-a',
-      actorUserId: 'owner-1',
+      actorUserId: 'owner-2',
       targetUserId: 'owner-1',
     })).rejects.toMatchObject({ code: 'LAST_OWNER' });
 

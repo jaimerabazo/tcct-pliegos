@@ -151,12 +151,12 @@ export async function removeMember(client, { organizationId, actorUserId, target
       throw err;
     }
 
-    if (targetUserId === actorUserId && target.role === 'owner') {
+    if (target.role === 'owner') {
       const ownerCount = await tx.membership.count({
         where: { organizationId, role: 'owner' },
       });
       if (ownerCount === 1) {
-        const err = new Error('El último owner no puede abandonar la organización.');
+        const err = new Error('No se puede eliminar al último owner de la organización.');
         err.code = 'LAST_OWNER';
         throw err;
       }

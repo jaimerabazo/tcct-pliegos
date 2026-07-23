@@ -39,9 +39,12 @@ export function createFakePliegoPrisma(
       if (typeof operation === 'function') return operation(client);
       return Promise.all(operation);
     },
+    async $executeRaw() {
+      return 1;
+    },
     async $queryRaw(_strings, tokenHash, userId, email) {
       const sql = Array.isArray(_strings) ? _strings.join('?') : String(_strings);
-      if (sql.includes('pg_advisory_xact_lock') || sql.includes('FROM organizations')) {
+      if (sql.includes('FROM organizations')) {
         return [];
       }
       const invitation = [...invitationRows.values()].find((i) => i.tokenHash === tokenHash);
@@ -170,6 +173,12 @@ export function createFakePliegoPrisma(
       },
       async findMany({ where } = {}) {
         return [...invitationRows.values()].filter((i) => matchesWhere(i, where));
+      },
+      async deleteMany({ where } = {}) {
+        const matching = [...invitationRows.entries()]
+          .filter(([, invitation]) => matchesWhere(invitation, where));
+        matching.forEach(([id]) => invitationRows.delete(id));
+        return { count: matching.length };
       },
       async delete({ where }) {
         const existing = invitationRows.get(where.id);

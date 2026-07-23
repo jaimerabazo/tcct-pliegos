@@ -3,9 +3,11 @@ import {
   acceptInvitation,
   createInvitation,
   createOrganization,
+  listPendingInvitations,
   listMembers,
   listMyOrgs,
   removeMember,
+  revokeInvitation,
 } from './orgs.js';
 
 describe('cliente API de organizaciones', () => {
@@ -42,5 +44,18 @@ describe('cliente API de organizaciones', () => {
       new Response(JSON.stringify({ error: 'Último owner.' }), { status: 409 }),
     );
     await expect(removeMember('org-a', 'owner')).rejects.toThrow('Último owner.');
+  });
+
+  it('lista y revoca invitaciones pendientes', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 'inv/1' }]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    expect(await listPendingInvitations('org-a')).toEqual([{ id: 'inv/1' }]);
+    await expect(revokeInvitation('org-a', 'inv/1')).resolves.toBeUndefined();
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/orgs/org-a/invitations');
+    expect(fetchMock.mock.calls[1][0]).toContain('inv%2F1');
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'DELETE' });
   });
 });

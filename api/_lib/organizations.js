@@ -32,7 +32,7 @@ export async function createOrganization(client, { name, userId }) {
     // Serializa nombres que producirían el mismo slug para que dos altas simultáneas
     // no pasen ambas el findUnique y una termine en P2002.
     const slugLock = slugifyOrganizationName(name);
-    await tx.$queryRaw`
+    await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtextextended(${`org-slug:${slugLock}`}, 0))
     `;
     const slug = await availableSlug(tx, name);
@@ -54,7 +54,7 @@ export async function createInvitation(
   const normalizedEmail = email.trim().toLowerCase();
   const invitationState = await client.$transaction(async (tx) => {
     // El lock evita dos invitaciones pendientes si llegan dos requests concurrentes.
-    await tx.$queryRaw`
+    await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(
         hashtextextended(${`invitation:${organizationId}:${normalizedEmail}`}, 0)
       )
@@ -100,7 +100,7 @@ export async function createInvitation(
 
 export async function rollbackInvitation(client, { invitation, previousInvitation }) {
   return client.$transaction(async (tx) => {
-    await tx.$queryRaw`
+    await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(
         hashtextextended(${`invitation:${invitation.organizationId}:${invitation.email}`}, 0)
       )
@@ -126,6 +126,50 @@ export async function rollbackInvitation(client, { invitation, previousInvitatio
 
     await tx.invitation.delete({ where: { id: invitation.id } });
   });
+}
+
+export async function listPendingInvitations(client, organizationId, { now = new Date() } = {}) {
+  const invitations = await client.invitation.findMany({
+    where: {
+      organizationId,
+      acceptedAt: null,
+      expiresAt: { gt: now },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // Nunca exponer tokenHash: aunque no sea el token en claro, es material sensible
+  // interno y el owner solo necesita los metadatos para gestionar la invitación.
+  return invitations.map((invitation) => ({
+    id: invitation.id,
+    email: invitation.email,
+    role: invitation.role,
+    expiresAt: invitation.expiresAt,
+    createdAt: invitation.createdAt,
+    createdBy: invitation.createdBy,
+  }));
+}
+
+export async function revokePendingInvitation(
+  client,
+  { organizationId, invitationId },
+  { now = new Date() } = {},
+) {
+  // deleteMany convierte comprobación+borrado en una única sentencia. Si la aceptación
+  // concurrente gana el bloqueo de la fila, acceptedAt deja de ser null y no se borra.
+  const result = await client.invitation.deleteMany({
+    where: {
+      id: invitationId,
+      organizationId,
+      acceptedAt: null,
+      expiresAt: { gt: now },
+    },
+  });
+  if (result.count === 0) {
+    const err = new Error('Invitación pendiente no encontrada.');
+    err.code = 'INVITATION_NOT_FOUND';
+    throw err;
+  }
 }
 
 export async function listMembers(client, organizationId) {

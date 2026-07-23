@@ -25,6 +25,19 @@ export async function createInvitation(organizationId, invitation) {
   return jsonOrThrow(res, 'No se ha podido crear la invitación');
 }
 
+export async function listPendingInvitations(organizationId) {
+  const res = await apiFetch(`/api/orgs/${organizationId}/invitations`);
+  return jsonOrThrow(res, 'No se han podido cargar las invitaciones pendientes');
+}
+
+export async function revokeInvitation(organizationId, invitationId) {
+  const res = await apiFetch(
+    `/api/orgs/${organizationId}/invitations/${encodeURIComponent(invitationId)}`,
+    { method: 'DELETE' },
+  );
+  if (!res.ok) await jsonOrThrow(res, 'No se ha podido revocar la invitación');
+}
+
 export async function acceptInvitation(token) {
   const res = await apiFetch('/api/invitations/accept', {
     method: 'POST',

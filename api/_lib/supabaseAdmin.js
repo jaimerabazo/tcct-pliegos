@@ -67,3 +67,30 @@ export async function inviteUserByEmail(
 
   return null;
 }
+
+// Resuelve userId (uuid de auth.users) → email para la gestión de equipo. Los emails
+// viven en el schema `auth` de Supabase, fuera de Prisma, así que se piden con la
+// service-role vía la Admin API. DEGRADA a null y NUNCA lanza: si falta configuración o
+// un usuario ya no existe, la lista de miembros sigue siendo útil (la UI cae al uuid).
+// Devuelve siempre un mapa con una entrada por cada id pedido.
+export async function getUserEmails(userIds, { env = process.env, client } = {}) {
+  const result = Object.fromEntries(userIds.map((id) => [id, null]));
+  if (userIds.length === 0) return result;
+
+  let admin;
+  try {
+    admin = client || getSupabaseAdmin(env);
+  } catch {
+    return result; // service-role no configurada: la UI mostrará los uuids
+  }
+
+  await Promise.all(userIds.map(async (id) => {
+    try {
+      const { data, error } = await admin.auth.admin.getUserById(id);
+      if (!error) result[id] = data?.user?.email ?? null;
+    } catch {
+      // un usuario borrado o un fallo puntual no debe tumbar toda la lista
+    }
+  }));
+  return result;
+}

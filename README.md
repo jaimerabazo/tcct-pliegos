@@ -48,7 +48,7 @@ En cada push/PR a `main` o `develop`, GitHub Actions (`.github/workflows/ci.yml`
 3. En Settings → Environment Variables (Production + Preview):
    - `ANTHROPIC_API_KEY` (+ `ANTHROPIC_MODEL` opcional, por defecto `claude-sonnet-5`)
    - `DATABASE_URL` (pooler de Supabase)
-   - `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`, la configuración JWT aplicable, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL` (dominio público estable, nunca localhost ni una URL de deployment), la configuración JWT aplicable, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
    - El mapa por entorno (dev/staging/prod) está en `docs/BLOQUE-2-ENTORNOS.md §4`.
 4. Las migraciones NO se aplican a mano: `.github/workflows/migrate.yml` corre `prisma migrate deploy` a staging (push a `develop`) y a prod (push a `main`, con gate de aprobación). Ver `docs/BLOQUE-2`.
 

@@ -1,13 +1,16 @@
 import { prisma } from '../../_lib/prisma.js';
 import { requireMember } from '../../_lib/authz.js';
 import { invitationCreateSchema } from '../../_lib/schemas.js';
-import { createInvitation, rollbackInvitation } from '../../_lib/organizations.js';
+import {
+  createInvitation,
+  listPendingInvitations,
+  rollbackInvitation,
+} from '../../_lib/organizations.js';
 import { inviteUserByEmail } from '../../_lib/supabaseAdmin.js';
 
 function invitationRedirectUrl(token, env = process.env) {
   const configuredUrl = env.APP_URL
-    || env.PUBLIC_APP_URL
-    || (env.VERCEL_URL ? `https://${env.VERCEL_URL}` : null);
+    || env.PUBLIC_APP_URL;
 
   try {
     const url = new URL(configuredUrl);
@@ -32,6 +35,15 @@ export default async function handler(
 
   if (req.query?.id !== ctx.orgId) {
     res.status(404).json({ error: 'Organización no encontrada.' });
+    return;
+  }
+  if (req.method === 'GET') {
+    try {
+      res.status(200).json(await listPendingInvitations(client, ctx.orgId));
+    } catch (err) {
+      console.error('Error listando invitaciones pendientes:', err);
+      res.status(500).json({ error: 'No se han podido listar las invitaciones pendientes.' });
+    }
     return;
   }
   if (req.method !== 'POST') {

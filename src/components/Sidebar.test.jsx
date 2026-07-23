@@ -41,4 +41,16 @@ describe('Sidebar — tarjeta de usuario', () => {
     render(<Sidebar view="dashboard" setView={vi.fn()} user={{ email: 'x@y.com' }} />);
     expect(screen.queryByRole('button', { name: 'Cerrar sesión' })).toBeNull();
   });
+
+  it('muestra la gestión de equipo solo a owners', () => {
+    const { rerender } = render(
+      <Sidebar view="dashboard" setView={vi.fn()} user={{ email: 'x@y.com' }} org={{ role: 'member' }} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Equipo' })).toBeNull();
+
+    rerender(
+      <Sidebar view="dashboard" setView={vi.fn()} user={{ email: 'x@y.com' }} org={{ role: 'owner' }} />,
+    );
+    expect(screen.getByRole('button', { name: 'Equipo' })).toBeInTheDocument();
+  });
 });

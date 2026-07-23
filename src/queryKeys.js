@@ -4,4 +4,6 @@
 export const tenantQueryKeys = {
   orgs: (userId) => ['orgs', userId],
   pliegos: (userId, orgId) => ['pliegos', userId, orgId],
+  members: (userId, orgId) => ['members', userId, orgId],
+  invitations: (userId, orgId) => ['invitations', userId, orgId],
 };

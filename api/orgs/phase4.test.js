@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import invitationHandler from './[id]/invitations.js';
+import revokeInvitationHandler from './[id]/invitations/[invitationId].js';
 import membersHandler from './[id]/members/index.js';
 import removeMemberHandler from './[id]/members/[userId].js';
 import acceptHandler from '../invitations/accept.js';
@@ -135,16 +136,22 @@ describe('fase 4: invitaciones y miembros', () => {
     expect(wrongPath.statusCode).toBe(404);
   });
 
-  it('lista miembros y permite al owner quitar un member', async () => {
+  it('lista miembros con email y permite al owner quitar un member', async () => {
     const prisma = fakePrisma();
+    // resolveEmails inyectable: en tests no dependemos de la service-role de Supabase.
+    const resolveEmails = async (ids) => Object.fromEntries(ids.map((id) => [id, `${id}@example.com`]));
     const listRes = createFakeRes();
     await membersHandler({
       method: 'GET',
       headers: ownerHeaders,
       query: { id: 'org-a' },
-    }, listRes, prisma);
+    }, listRes, prisma, { resolveEmails });
     expect(listRes.statusCode).toBe(200);
     expect(listRes.body).toHaveLength(2);
+    expect(listRes.body).toContainEqual(expect.objectContaining({
+      userId: 'member-1',
+      email: 'member-1@example.com',
+    }));
 
     const removeRes = createFakeRes();
     await removeMemberHandler({
@@ -153,6 +160,112 @@ describe('fase 4: invitaciones y miembros', () => {
       query: { id: 'org-a', userId: 'member-1' },
     }, removeRes, prisma);
     expect(removeRes.statusCode).toBe(204);
+  });
+
+  it('degrada a email null si el resolver falla, sin tumbar la lista de miembros', async () => {
+    const prisma = fakePrisma();
+    const resolveEmails = async () => { throw new Error('service-role caída'); };
+    const listRes = createFakeRes();
+    await membersHandler({
+      method: 'GET',
+      headers: ownerHeaders,
+      query: { id: 'org-a' },
+    }, listRes, prisma, { resolveEmails });
+    expect(listRes.statusCode).toBe(200);
+    expect(listRes.body).toHaveLength(2);
+    expect(listRes.body.every((member) => member.email === null)).toBe(true);
+  });
+
+  it('lista solo invitaciones pendientes sin exponer hashes y permite revocarlas', async () => {
+    const now = Date.now();
+    const prisma = createFakePliegoPrisma([], {
+      organizations: [{ id: 'org-a', name: 'Org A', slug: 'org-a', plan: 'trial' }],
+      memberships: [{ userId: TEST_USER.id, organizationId: 'org-a', role: 'owner' }],
+      invitations: [
+        {
+          id: 'pending',
+          organizationId: 'org-a',
+          email: 'pending@example.com',
+          role: 'member',
+          tokenHash: 'hash-pending',
+          acceptedAt: null,
+          expiresAt: new Date(now + 60_000),
+          createdAt: new Date(now),
+          createdBy: TEST_USER.id,
+        },
+        {
+          id: 'accepted',
+          organizationId: 'org-a',
+          email: 'accepted@example.com',
+          role: 'member',
+          tokenHash: 'hash-accepted',
+          acceptedAt: new Date(now),
+          expiresAt: new Date(now + 60_000),
+          createdAt: new Date(now),
+          createdBy: TEST_USER.id,
+        },
+        {
+          id: 'expired',
+          organizationId: 'org-a',
+          email: 'expired@example.com',
+          role: 'owner',
+          tokenHash: 'hash-expired',
+          acceptedAt: null,
+          expiresAt: new Date(now - 60_000),
+          createdAt: new Date(now - 120_000),
+          createdBy: TEST_USER.id,
+        },
+        {
+          id: 'other-org',
+          organizationId: 'org-b',
+          email: 'private@other-org.example',
+          role: 'owner',
+          tokenHash: 'hash-other-org',
+          acceptedAt: null,
+          expiresAt: new Date(now + 60_000),
+          createdAt: new Date(now),
+          createdBy: 'other-owner',
+        },
+      ],
+    });
+
+    const listRes = createFakeRes();
+    await invitationHandler({
+      method: 'GET',
+      headers: ownerHeaders,
+      query: { id: 'org-a' },
+    }, listRes, prisma);
+    expect(listRes.statusCode).toBe(200);
+    expect(listRes.body).toEqual([expect.objectContaining({
+      id: 'pending',
+      email: 'pending@example.com',
+    })]);
+    expect(listRes.body[0]).not.toHaveProperty('tokenHash');
+
+    const revokeRes = createFakeRes();
+    await revokeInvitationHandler({
+      method: 'DELETE',
+      headers: ownerHeaders,
+      query: { id: 'org-a', invitationId: 'pending' },
+    }, revokeRes, prisma);
+    expect(revokeRes.statusCode).toBe(204);
+
+    const repeatRes = createFakeRes();
+    await revokeInvitationHandler({
+      method: 'DELETE',
+      headers: ownerHeaders,
+      query: { id: 'org-a', invitationId: 'pending' },
+    }, repeatRes, prisma);
+    expect(repeatRes.statusCode).toBe(404);
+
+    const crossTenantRes = createFakeRes();
+    await revokeInvitationHandler({
+      method: 'DELETE',
+      headers: ownerHeaders,
+      query: { id: 'org-a', invitationId: 'other-org' },
+    }, crossTenantRes, prisma);
+    expect(crossTenantRes.statusCode).toBe(404);
+    expect(await prisma.invitation.findUnique({ where: { id: 'other-org' } })).not.toBeNull();
   });
 
   it('rechaza que el último owner se quite a sí mismo', async () => {
@@ -228,7 +341,7 @@ describe('fase 4: invitaciones y miembros', () => {
     const prisma = fakePrisma();
     const badMethod = createFakeRes();
     await invitationHandler({
-      method: 'GET', headers: ownerHeaders, query: { id: 'org-a' },
+      method: 'PATCH', headers: ownerHeaders, query: { id: 'org-a' },
     }, badMethod, prisma);
     expect(badMethod.statusCode).toBe(405);
 
@@ -334,7 +447,7 @@ describe('fase 4: invitaciones y miembros', () => {
     });
   });
 
-  it('falla cerrado y revierte la fila si no hay una URL pública configurada', async () => {
+  it('falla cerrado y no usa VERCEL_URL si falta una URL pública configurada', async () => {
     const prisma = fakePrisma();
     const res = createFakeRes();
     await invitationHandler({
@@ -343,7 +456,7 @@ describe('fase 4: invitaciones y miembros', () => {
       query: { id: 'org-a' },
       body: { email: 'new@example.com', role: 'member' },
     }, res, prisma, {
-      env: {},
+      env: { VERCEL_URL: 'deployment-efimero.vercel.app' },
       inviteUser: async () => {
         throw new Error('No debería intentar enviar sin URL.');
       },
@@ -351,6 +464,16 @@ describe('fase 4: invitaciones y miembros', () => {
 
     expect(res.statusCode).toBe(503);
     expect(await prisma.invitation.findMany({ where: { organizationId: 'org-a' } })).toEqual([]);
+  });
+
+  it('valida el método al revocar invitaciones', async () => {
+    const res = createFakeRes();
+    await revokeInvitationHandler({
+      method: 'GET',
+      headers: ownerHeaders,
+      query: { id: 'org-a', invitationId: 'inv-1' },
+    }, res, fakePrisma());
+    expect(res.statusCode).toBe(405);
   });
 
   it('valida métodos y miembros inexistentes', async () => {

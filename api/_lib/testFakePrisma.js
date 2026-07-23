@@ -73,6 +73,8 @@ export function createFakePliegoPrisma(
           role: invitation.role,
           createdAt: new Date(),
         });
+      } else if (members.get(memberKey).role !== 'owner') {
+        members.get(memberKey).role = invitation.role;
       }
       invitation.acceptedAt = new Date();
       return [{

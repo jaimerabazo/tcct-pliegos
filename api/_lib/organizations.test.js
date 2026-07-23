@@ -113,6 +113,54 @@ describe('organizations domain', () => {
     }));
   });
 
+  it('aplica el rol invitado a una membership existente sin degradar owners', async () => {
+    const ownerToken = 'token-owner-de-prueba-con-mas-de-32-caracteres';
+    const memberToken = 'token-member-de-prueba-con-mas-de-32-caracteres';
+    const prisma = createFakePliegoPrisma([], {
+      organizations: [{ id: 'org-a', name: 'Org A', slug: 'org-a', plan: 'trial' }],
+      memberships: [
+        { userId: 'existing-member', organizationId: 'org-a', role: 'member' },
+        { userId: 'existing-owner', organizationId: 'org-a', role: 'owner' },
+      ],
+      invitations: [
+        {
+          id: 'inv-owner',
+          organizationId: 'org-a',
+          email: 'member@example.com',
+          role: 'owner',
+          tokenHash: hashInvitationToken(ownerToken),
+          acceptedAt: null,
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        {
+          id: 'inv-member',
+          organizationId: 'org-a',
+          email: 'owner@example.com',
+          role: 'member',
+          tokenHash: hashInvitationToken(memberToken),
+          acceptedAt: null,
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      ],
+    });
+
+    await expect(acceptInvitation(prisma, {
+      token: ownerToken,
+      userId: 'existing-member',
+      email: 'member@example.com',
+    })).resolves.toMatchObject({ role: 'owner' });
+    await expect(acceptInvitation(prisma, {
+      token: memberToken,
+      userId: 'existing-owner',
+      email: 'owner@example.com',
+    })).resolves.toMatchObject({ role: 'owner' });
+
+    expect(await listMembers(prisma, 'org-a')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ userId: 'existing-member', role: 'owner' }),
+      expect.objectContaining({ userId: 'existing-owner', role: 'owner' }),
+    ]));
+  });
+
   it('rechaza aceptación sin email o sin resultado de la función segura', async () => {
     await expect(acceptInvitation({}, {
       token: 'token-secreto-de-prueba-con-mas-de-32-caracteres',

@@ -49,7 +49,13 @@ BEGIN
         invitation_row.role,
         CURRENT_TIMESTAMP
     )
-    ON CONFLICT ("userId", "organizationId") DO NOTHING;
+    ON CONFLICT ("userId", "organizationId") DO UPDATE
+    SET role = CASE
+        -- Una invitación puede promocionar a owner, pero nunca degradar al owner
+        -- existente: hacerlo podría dejar la organización sin propietarios.
+        WHEN memberships.role = 'owner'::"Role" THEN memberships.role
+        ELSE EXCLUDED.role
+    END;
 
     UPDATE invitations
        SET "acceptedAt" = CURRENT_TIMESTAMP

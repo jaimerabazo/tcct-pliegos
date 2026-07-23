@@ -125,13 +125,30 @@ describe('organizations domain', () => {
       userId: 'user-new',
       email: 'new@example.com',
     })).rejects.toMatchObject({ code: 'INVITATION_INVALID' });
+  });
+
+  it.each([
+    ['originalCode', 'La invitación no existe.'],
+    ['code', 'La invitación ha caducado.'],
+    ['originalCode', 'La invitación pertenece a otro email.'],
+  ])('normaliza P0001 de Prisma 7 desde driverAdapterError.cause.%s', async (codeField, message) => {
+    const prismaError = new Error(
+      `Raw query failed. Code: \`P0001\`. Message: \`ERROR: ${message}\``,
+    );
+    prismaError.code = 'P2010';
+    prismaError.meta = {
+      driverAdapterError: {
+        cause: {
+          kind: 'PostgresError',
+          [codeField]: 'P0001',
+          originalMessage: `ERROR: ${message}`,
+        },
+      },
+    };
 
     await expect(acceptInvitation({
       $queryRaw: async () => {
-        const err = new Error('Raw query failed');
-        err.code = 'P2010';
-        err.meta = { code: 'P0001', message: 'ERROR: La invitación ha caducado.' };
-        throw err;
+        throw prismaError;
       },
     }, {
       token: 'token-secreto-de-prueba-con-mas-de-32-caracteres',
@@ -139,7 +156,26 @@ describe('organizations domain', () => {
       email: 'new@example.com',
     })).rejects.toMatchObject({
       code: 'INVITATION_INVALID',
-      message: 'La invitación ha caducado.',
+      message,
+    });
+  });
+
+  it('mantiene compatibilidad con el metadata de Prisma anterior', async () => {
+    const prismaError = new Error('Raw query failed');
+    prismaError.code = 'P2010';
+    prismaError.meta = { code: 'P0001', message: 'ERROR: La invitación ya fue aceptada.' };
+
+    await expect(acceptInvitation({
+      $queryRaw: async () => {
+        throw prismaError;
+      },
+    }, {
+      token: 'token-secreto-de-prueba-con-mas-de-32-caracteres',
+      userId: 'user-new',
+      email: 'new@example.com',
+    })).rejects.toMatchObject({
+      code: 'INVITATION_INVALID',
+      message: 'La invitación ya fue aceptada.',
     });
   });
 });

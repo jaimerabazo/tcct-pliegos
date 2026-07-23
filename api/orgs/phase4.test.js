@@ -141,6 +141,41 @@ describe('fase 4: invitaciones y miembros', () => {
     expect(res.body.error).toMatch(/otro email/i);
   });
 
+  it.each([
+    'La invitación no existe.',
+    'La invitación ha caducado.',
+    'La invitación pertenece a otro email.',
+  ])('responde 400 para el P0001 real de Prisma 7: %s', async (message) => {
+    const prismaError = new Error(
+      `Raw query failed. Code: \`P0001\`. Message: \`ERROR: ${message}\``,
+    );
+    prismaError.code = 'P2010';
+    prismaError.meta = {
+      driverAdapterError: {
+        cause: {
+          kind: 'PostgresError',
+          originalCode: 'P0001',
+          originalMessage: `ERROR: ${message}`,
+        },
+      },
+    };
+    const prisma = {
+      $queryRaw: async () => {
+        throw prismaError;
+      },
+    };
+    const res = createFakeRes();
+
+    await acceptHandler({
+      method: 'POST',
+      headers: await authHeaders({ sub: 'invited-user', email: 'invited@example.com' }),
+      body: { token: 'token-secreto-de-prueba-con-mas-de-32-caracteres' },
+    }, res, prisma);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: message });
+  });
+
   it('valida métodos, bodies y duplicados de invitación', async () => {
     const prisma = fakePrisma();
     const badMethod = createFakeRes();

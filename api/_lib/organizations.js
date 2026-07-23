@@ -148,9 +148,17 @@ export async function acceptInvitation(client, { token, userId, email }) {
     `;
   } catch (err) {
     // Prisma envuelve los RAISE EXCEPTION de PostgreSQL como P2010 y conserva el
-    // SQLSTATE real en meta.code. Lo convertimos a un error de dominio estable.
-    if (err?.code === 'P2010' && err?.meta?.code === 'P0001') {
-      const dbMessage = String(err.meta.message || '');
+    // error original dentro del DriverAdapterError. Conservamos también la forma
+    // antigua para no acoplar el dominio a una única versión de Prisma.
+    const driverCause = err?.meta?.driverAdapterError?.cause;
+    const sqlStates = [driverCause?.code, driverCause?.originalCode, err?.meta?.code];
+    if (err?.code === 'P2010' && sqlStates.includes('P0001')) {
+      const dbMessage = [
+        driverCause?.message,
+        driverCause?.originalMessage,
+        err?.meta?.message,
+        err?.message,
+      ].filter((message) => typeof message === 'string').join('\n');
       const safeMessage = [
         'La invitación no existe.',
         'La invitación ya fue aceptada.',

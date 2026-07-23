@@ -1,7 +1,7 @@
 import { prisma } from '../../_lib/prisma.js';
 import { requireMember } from '../../_lib/authz.js';
 import { invitationCreateSchema } from '../../_lib/schemas.js';
-import { createInvitation } from '../../_lib/organizations.js';
+import { createInvitation, rollbackInvitation } from '../../_lib/organizations.js';
 import { inviteUserByEmail } from '../../_lib/supabaseAdmin.js';
 
 function invitationRedirectUrl(token, env = process.env) {
@@ -45,15 +45,15 @@ export default async function handler(
     return;
   }
 
-  let invitation;
+  let created;
   try {
-    const created = await createInvitation(client, {
+    created = await createInvitation(client, {
       organizationId: ctx.orgId,
       email: parsed.data.email,
       role: parsed.data.role,
       createdBy: ctx.user.id,
     });
-    invitation = created.invitation;
+    const { invitation } = created;
 
     await inviteUser(
       invitation.email,
@@ -70,19 +70,15 @@ export default async function handler(
     });
   } catch (err) {
     // Si Auth no provisiona ni envía el correo (invite para nuevos, magic link para
-    // existentes), la invitación interna no debe quedar pendiente y bloquear un
-    // reintento. La eliminación es compensatoria porque la llamada HTTP externa no
-    // puede formar parte de la transacción de Postgres.
-    if (invitation && ['AUTH_INVITE_FAILED', 'AUTH_INVITE_NOT_CONFIGURED', 'APP_URL_NOT_CONFIGURED'].includes(err?.code)) {
+    // existentes), deshacemos la creación o restauramos la versión anterior. Es una
+    // compensación porque la llamada HTTP externa no puede formar parte de la
+    // transacción de Postgres.
+    if (created && ['AUTH_INVITE_FAILED', 'AUTH_INVITE_NOT_CONFIGURED', 'APP_URL_NOT_CONFIGURED'].includes(err?.code)) {
       try {
-        await client.invitation.delete({ where: { id: invitation.id } });
+        await rollbackInvitation(client, created);
       } catch (cleanupError) {
         console.error('Error revirtiendo invitación sin correo:', cleanupError);
       }
-    }
-    if (err?.code === 'INVITATION_EXISTS') {
-      res.status(409).json({ error: err.message });
-      return;
     }
     if (err?.code === 'AUTH_INVITE_NOT_CONFIGURED' || err?.code === 'APP_URL_NOT_CONFIGURED') {
       console.error('Configuración de invitaciones incompleta:', err);

@@ -8,6 +8,7 @@ import { createFakePliegoPrisma } from '../_lib/testFakePrisma.js';
 import { createFakeRes } from '../_lib/testFakeRes.js';
 import { authHeaders, TEST_USER } from '../_lib/testAuth.js';
 import { inviteUserByEmail } from '../_lib/supabaseAdmin.js';
+import { hashInvitationToken } from '../_lib/organizations.js';
 
 const ownerHeaders = {
   ...(await authHeaders()),
@@ -223,7 +224,7 @@ describe('fase 4: invitaciones y miembros', () => {
     expect(res.body).toEqual({ error: message });
   });
 
-  it('valida métodos, bodies y duplicados de invitación', async () => {
+  it('valida métodos y bodies, y permite reenviar una invitación pendiente', async () => {
     const prisma = fakePrisma();
     const badMethod = createFakeRes();
     await invitationHandler({
@@ -248,9 +249,36 @@ describe('fase 4: invitaciones y miembros', () => {
     };
     const authInvite = captureAuthInvite();
     await invitationHandler(request, createFakeRes(), prisma, authInvite);
-    const duplicate = createFakeRes();
-    await invitationHandler(request, duplicate, prisma, authInvite);
-    expect(duplicate.statusCode).toBe(409);
+    const resend = createFakeRes();
+    await invitationHandler(request, resend, prisma, authInvite);
+    expect(resend.statusCode).toBe(201);
+    expect(authInvite.calls).toHaveLength(2);
+    const rows = await prisma.invitation.findMany({ where: { organizationId: 'org-a' } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].tokenHash).toBe(hashInvitationToken(
+      new URL(authInvite.calls[1][1]).searchParams.get('invitation'),
+    ));
+    expect(rows[0].tokenHash).not.toBe(hashInvitationToken(
+      new URL(authInvite.calls[0][1]).searchParams.get('invitation'),
+    ));
+
+    const oldToken = new URL(authInvite.calls[0][1]).searchParams.get('invitation');
+    const oldAccept = createFakeRes();
+    await acceptHandler({
+      method: 'POST',
+      headers: await authHeaders({ sub: 'invited-user', email: 'duplicate@example.com' }),
+      body: { token: oldToken },
+    }, oldAccept, prisma);
+    expect(oldAccept.statusCode).toBe(400);
+
+    const newToken = new URL(authInvite.calls[1][1]).searchParams.get('invitation');
+    const newAccept = createFakeRes();
+    await acceptHandler({
+      method: 'POST',
+      headers: await authHeaders({ sub: 'invited-user', email: 'duplicate@example.com' }),
+      body: { token: newToken },
+    }, newAccept, prisma);
+    expect(newAccept.statusCode).toBe(200);
   });
 
   it('revierte la fila si Supabase Auth no puede provisionar al usuario', async () => {
@@ -272,6 +300,38 @@ describe('fase 4: invitaciones y miembros', () => {
 
     expect(res.statusCode).toBe(502);
     expect(await prisma.invitation.findMany({ where: { organizationId: 'org-a' } })).toEqual([]);
+  });
+
+  it('restaura la invitación anterior si falla el correo de reenvío', async () => {
+    const prisma = fakePrisma();
+    const firstInvite = captureAuthInvite();
+    const request = {
+      method: 'POST',
+      headers: ownerHeaders,
+      query: { id: 'org-a' },
+      body: { email: 'retry@example.com', role: 'member' },
+    };
+    await invitationHandler(request, createFakeRes(), prisma, firstInvite);
+    const [before] = await prisma.invitation.findMany({ where: { organizationId: 'org-a' } });
+
+    const failedResend = createFakeRes();
+    await invitationHandler(request, failedResend, prisma, {
+      env: { APP_URL: 'https://app.example.com' },
+      inviteUser: async () => {
+        const error = new Error('fallo de Supabase');
+        error.code = 'AUTH_INVITE_FAILED';
+        throw error;
+      },
+    });
+
+    expect(failedResend.statusCode).toBe(502);
+    const [restored] = await prisma.invitation.findMany({ where: { organizationId: 'org-a' } });
+    expect(restored).toMatchObject({
+      id: before.id,
+      tokenHash: before.tokenHash,
+      expiresAt: before.expiresAt,
+      createdBy: before.createdBy,
+    });
   });
 
   it('falla cerrado y revierte la fila si no hay una URL pública configurada', async () => {

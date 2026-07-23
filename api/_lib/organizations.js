@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Debe mantenerse alineado con Authentication > Email OTP Expiration en Supabase.
+const INVITATION_TTL_MS = 60 * 60 * 1000;
 
 export function slugifyOrganizationName(name) {
   return name
@@ -51,7 +52,7 @@ export async function createInvitation(
   { now = new Date(), token = randomBytes(32).toString('base64url') } = {},
 ) {
   const normalizedEmail = email.trim().toLowerCase();
-  const invitation = await client.$transaction(async (tx) => {
+  const invitationState = await client.$transaction(async (tx) => {
     // El lock evita dos invitaciones pendientes si llegan dos requests concurrentes.
     await tx.$queryRaw`
       SELECT pg_advisory_xact_lock(
@@ -66,26 +67,65 @@ export async function createInvitation(
         expiresAt: { gt: now },
       },
     });
+    const data = {
+      role,
+      tokenHash: hashInvitationToken(token),
+      expiresAt: new Date(now.getTime() + INVITATION_TTL_MS),
+      createdBy,
+    };
+
+    // Reenviar invalida el token interno anterior y reinicia la misma hora de
+    // validez que ofrece el enlace de Supabase.
     if (pending) {
-      const err = new Error('Ya existe una invitación pendiente para este email.');
-      err.code = 'INVITATION_EXISTS';
-      throw err;
+      const invitation = await tx.invitation.update({
+        where: { id: pending.id },
+        data,
+      });
+      return { invitation, previousInvitation: pending };
     }
 
-    return tx.invitation.create({
+    const invitation = await tx.invitation.create({
       data: {
         organizationId,
         email: normalizedEmail,
-        role,
-        tokenHash: hashInvitationToken(token),
-        expiresAt: new Date(now.getTime() + INVITATION_TTL_MS),
-        createdBy,
+        ...data,
       },
     });
+    return { invitation, previousInvitation: null };
   });
 
   // El token en claro solo existe en esta respuesta. La BD conserva únicamente sha-256.
-  return { invitation, token };
+  return { ...invitationState, token };
+}
+
+export async function rollbackInvitation(client, { invitation, previousInvitation }) {
+  return client.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${`invitation:${invitation.organizationId}:${invitation.email}`}, 0)
+      )
+    `;
+    const current = await tx.invitation.findUnique({ where: { id: invitation.id } });
+
+    // Otro reenvío pudo rotar la misma fila mientras fallaba la llamada a Auth.
+    // En ese caso no debemos deshacer el token más reciente.
+    if (!current || current.tokenHash !== invitation.tokenHash) return;
+
+    if (previousInvitation) {
+      await tx.invitation.update({
+        where: { id: invitation.id },
+        data: {
+          role: previousInvitation.role,
+          tokenHash: previousInvitation.tokenHash,
+          expiresAt: previousInvitation.expiresAt,
+          createdBy: previousInvitation.createdBy,
+        },
+      });
+      return;
+    }
+
+    await tx.invitation.delete({ where: { id: invitation.id } });
+  });
 }
 
 export async function listMembers(client, organizationId) {

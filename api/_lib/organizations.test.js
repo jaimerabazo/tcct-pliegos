@@ -25,7 +25,7 @@ describe('organizations domain', () => {
     }));
   });
 
-  it('guarda solo el hash y hace caducar la invitación a los 7 días', async () => {
+  it('guarda solo el hash y hace caducar la invitación en una hora', async () => {
     const prisma = createFakePliegoPrisma();
     const now = new Date('2026-07-23T10:00:00Z');
     const { invitation, token } = await createInvitation(prisma, {
@@ -38,26 +38,46 @@ describe('organizations domain', () => {
     expect(invitation.email).toBe('persona@example.com');
     expect(invitation.tokenHash).toBe(hashInvitationToken(token));
     expect(invitation.tokenHash).not.toContain(token);
-    expect(invitation.expiresAt).toEqual(new Date('2026-07-30T10:00:00Z'));
+    expect(invitation.expiresAt).toEqual(new Date('2026-07-23T11:00:00Z'));
   });
 
-  it('impide duplicar una invitación pendiente', async () => {
+  it('rota una invitación pendiente al reenviar y conserva una sola fila', async () => {
     const now = new Date('2026-07-23T10:00:00Z');
+    const previousToken = 'token-anterior-de-prueba-con-mas-de-32-caracteres';
+    const nextToken = 'token-nuevo-de-prueba-con-mas-de-32-caracteres';
     const prisma = createFakePliegoPrisma([], {
       invitations: [{
         id: 'inv-1',
         organizationId: 'org-a',
         email: 'persona@example.com',
+        role: 'member',
+        tokenHash: hashInvitationToken(previousToken),
         acceptedAt: null,
         expiresAt: new Date('2026-07-24T10:00:00Z'),
+        createdBy: 'owner-anterior',
       }],
     });
-    await expect(createInvitation(prisma, {
+    const created = await createInvitation(prisma, {
       organizationId: 'org-a',
       email: 'persona@example.com',
-      role: 'member',
+      role: 'owner',
       createdBy: 'owner-1',
-    }, { now })).rejects.toMatchObject({ code: 'INVITATION_EXISTS' });
+    }, { now, token: nextToken });
+
+    expect(created.invitation).toMatchObject({
+      id: 'inv-1',
+      role: 'owner',
+      tokenHash: hashInvitationToken(nextToken),
+      createdBy: 'owner-1',
+      expiresAt: new Date('2026-07-23T11:00:00Z'),
+    });
+    expect(created.previousInvitation).toMatchObject({
+      tokenHash: hashInvitationToken(previousToken),
+    });
+    expect(await prisma.invitation.findMany({ where: {
+      organizationId: 'org-a',
+      acceptedAt: null,
+    } })).toHaveLength(1);
   });
 
   it('protege al último owner, pero permite quitarlo si existe otro', async () => {

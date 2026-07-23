@@ -145,6 +145,9 @@ export function createFakePliegoPrisma(
       },
     },
     invitation: {
+      async findUnique({ where }) {
+        return invitationRows.get(where.id) ?? null;
+      },
       async findFirst({ where } = {}) {
         return [...invitationRows.values()].find((i) => matchesWhere(i, where)) ?? null;
       },
@@ -153,6 +156,17 @@ export function createFakePliegoPrisma(
         const row = { id, acceptedAt: null, createdAt: new Date(), ...data };
         invitationRows.set(id, row);
         return row;
+      },
+      async update({ where, data }) {
+        const existing = invitationRows.get(where.id);
+        if (!existing) {
+          const err = new Error('Record not found.');
+          err.code = 'P2025';
+          throw err;
+        }
+        const updated = { ...existing, ...data };
+        invitationRows.set(where.id, updated);
+        return updated;
       },
       async findMany({ where } = {}) {
         return [...invitationRows.values()].filter((i) => matchesWhere(i, where));

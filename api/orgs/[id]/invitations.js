@@ -2,8 +2,31 @@ import { prisma } from '../../_lib/prisma.js';
 import { requireMember } from '../../_lib/authz.js';
 import { invitationCreateSchema } from '../../_lib/schemas.js';
 import { createInvitation } from '../../_lib/organizations.js';
+import { inviteUserByEmail } from '../../_lib/supabaseAdmin.js';
 
-export default async function handler(req, res, client = prisma) {
+function invitationRedirectUrl(token, env = process.env) {
+  const configuredUrl = env.APP_URL
+    || env.PUBLIC_APP_URL
+    || (env.VERCEL_URL ? `https://${env.VERCEL_URL}` : null);
+
+  try {
+    const url = new URL(configuredUrl);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid protocol');
+    url.searchParams.set('invitation', token);
+    return url.toString();
+  } catch {
+    const error = new Error('Falta configurar APP_URL para generar el enlace de invitación.');
+    error.code = 'APP_URL_NOT_CONFIGURED';
+    throw error;
+  }
+}
+
+export default async function handler(
+  req,
+  res,
+  client = prisma,
+  { inviteUser = inviteUserByEmail, env = process.env } = {},
+) {
   const ctx = await requireMember(req, res, { client, role: 'owner' });
   if (!ctx) return;
 
@@ -22,13 +45,21 @@ export default async function handler(req, res, client = prisma) {
     return;
   }
 
+  let invitation;
   try {
-    const { invitation, token } = await createInvitation(client, {
+    const created = await createInvitation(client, {
       organizationId: ctx.orgId,
       email: parsed.data.email,
       role: parsed.data.role,
       createdBy: ctx.user.id,
     });
+    invitation = created.invitation;
+
+    await inviteUser(
+      invitation.email,
+      invitationRedirectUrl(created.token, env),
+    );
+
     res.status(201).json({
       invitation: {
         id: invitation.id,
@@ -36,11 +67,30 @@ export default async function handler(req, res, client = prisma) {
         role: invitation.role,
         expiresAt: invitation.expiresAt,
       },
-      token,
     });
   } catch (err) {
+    // Si Auth no provisiona/envía el correo, la invitación interna no debe quedar
+    // pendiente y bloquear un reintento. La eliminación es compensatoria porque la
+    // llamada HTTP externa no puede formar parte de la transacción de Postgres.
+    if (invitation && ['AUTH_INVITE_FAILED', 'AUTH_INVITE_NOT_CONFIGURED', 'APP_URL_NOT_CONFIGURED'].includes(err?.code)) {
+      try {
+        await client.invitation.delete({ where: { id: invitation.id } });
+      } catch (cleanupError) {
+        console.error('Error revirtiendo invitación sin correo:', cleanupError);
+      }
+    }
     if (err?.code === 'INVITATION_EXISTS') {
       res.status(409).json({ error: err.message });
+      return;
+    }
+    if (err?.code === 'AUTH_INVITE_NOT_CONFIGURED' || err?.code === 'APP_URL_NOT_CONFIGURED') {
+      console.error('Configuración de invitaciones incompleta:', err);
+      res.status(503).json({ error: 'El envío de invitaciones no está configurado.' });
+      return;
+    }
+    if (err?.code === 'AUTH_INVITE_FAILED') {
+      console.error('Error invitando usuario en Supabase Auth:', err.cause || err);
+      res.status(502).json({ error: 'No se ha podido enviar la invitación por email.' });
       return;
     }
     console.error('Error creando invitación:', err);

@@ -13,6 +13,15 @@ const ownerHeaders = {
   'x-organization-id': 'org-a',
 };
 
+function captureAuthInvite() {
+  const calls = [];
+  return {
+    calls,
+    env: { APP_URL: 'https://app.example.com' },
+    inviteUser: async (...args) => { calls.push(args); },
+  };
+}
+
 function fakePrisma() {
   return createFakePliegoPrisma([], {
     organizations: [{ id: 'org-a', name: 'Org A', slug: 'org-a', plan: 'trial' }],
@@ -26,24 +35,29 @@ function fakePrisma() {
 describe('fase 4: invitaciones y miembros', () => {
   it('crea y acepta una invitación sin guardar el token en claro', async () => {
     const prisma = fakePrisma();
+    const authInvite = captureAuthInvite();
     const createRes = createFakeRes();
     await invitationHandler({
       method: 'POST',
       headers: ownerHeaders,
       query: { id: 'org-a' },
       body: { email: 'new@example.com', role: 'member' },
-    }, createRes, prisma);
+    }, createRes, prisma, authInvite);
 
     expect(createRes.statusCode).toBe(201);
-    expect(createRes.body.token.length).toBeGreaterThanOrEqual(32);
+    expect(createRes.body.token).toBeUndefined();
+    expect(authInvite.calls[0][0]).toBe('new@example.com');
+    const invitationUrl = new URL(authInvite.calls[0][1]);
+    const token = invitationUrl.searchParams.get('invitation');
+    expect(token.length).toBeGreaterThanOrEqual(32);
     const stored = await prisma.invitation.findMany({ where: { organizationId: 'org-a' } });
-    expect(stored[0].tokenHash).not.toBe(createRes.body.token);
+    expect(stored[0].tokenHash).not.toBe(token);
 
     const acceptRes = createFakeRes();
     await acceptHandler({
       method: 'POST',
       headers: await authHeaders({ sub: 'new-user', email: 'new@example.com' }),
-      body: { token: createRes.body.token },
+      body: { token },
     }, acceptRes, prisma);
     expect(acceptRes.statusCode).toBe(200);
     expect(acceptRes.body).toMatchObject({ organizationId: 'org-a', role: 'member' });
@@ -107,19 +121,21 @@ describe('fase 4: invitaciones y miembros', () => {
 
   it('rechaza una invitación aceptada con otro email', async () => {
     const prisma = fakePrisma();
+    const authInvite = captureAuthInvite();
     const createRes = createFakeRes();
     await invitationHandler({
       method: 'POST',
       headers: ownerHeaders,
       query: { id: 'org-a' },
       body: { email: 'right@example.com' },
-    }, createRes, prisma);
+    }, createRes, prisma, authInvite);
+    const token = new URL(authInvite.calls[0][1]).searchParams.get('invitation');
 
     const res = createFakeRes();
     await acceptHandler({
       method: 'POST',
       headers: await authHeaders({ sub: 'wrong-user', email: 'wrong@example.com' }),
-      body: { token: createRes.body.token },
+      body: { token },
     }, res, prisma);
     expect(res.statusCode).toBe(400);
     expect(res.body.error).toMatch(/otro email/i);
@@ -148,10 +164,51 @@ describe('fase 4: invitaciones y miembros', () => {
       query: { id: 'org-a' },
       body: { email: 'duplicate@example.com' },
     };
-    await invitationHandler(request, createFakeRes(), prisma);
+    const authInvite = captureAuthInvite();
+    await invitationHandler(request, createFakeRes(), prisma, authInvite);
     const duplicate = createFakeRes();
-    await invitationHandler(request, duplicate, prisma);
+    await invitationHandler(request, duplicate, prisma, authInvite);
     expect(duplicate.statusCode).toBe(409);
+  });
+
+  it('revierte la fila si Supabase Auth no puede provisionar al usuario', async () => {
+    const prisma = fakePrisma();
+    const res = createFakeRes();
+    await invitationHandler({
+      method: 'POST',
+      headers: ownerHeaders,
+      query: { id: 'org-a' },
+      body: { email: 'new@example.com', role: 'member' },
+    }, res, prisma, {
+      env: { APP_URL: 'https://app.example.com' },
+      inviteUser: async () => {
+        const error = new Error('fallo de Supabase');
+        error.code = 'AUTH_INVITE_FAILED';
+        throw error;
+      },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(await prisma.invitation.findMany({ where: { organizationId: 'org-a' } })).toEqual([]);
+  });
+
+  it('falla cerrado y revierte la fila si no hay una URL pública configurada', async () => {
+    const prisma = fakePrisma();
+    const res = createFakeRes();
+    await invitationHandler({
+      method: 'POST',
+      headers: ownerHeaders,
+      query: { id: 'org-a' },
+      body: { email: 'new@example.com', role: 'member' },
+    }, res, prisma, {
+      env: {},
+      inviteUser: async () => {
+        throw new Error('No debería intentar enviar sin URL.');
+      },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(await prisma.invitation.findMany({ where: { organizationId: 'org-a' } })).toEqual([]);
   });
 
   it('valida métodos y miembros inexistentes', async () => {

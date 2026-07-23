@@ -26,8 +26,8 @@ export async function authHeader() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// Magic link (invite-only: shouldCreateUser=false — solo usuarios ya invitados desde
-// el dashboard de Supabase pueden iniciar sesión; nadie se auto-registra).
+// Magic link invite-only. Los usuarios son provisionados por el endpoint de invitación
+// mediante Supabase Admin; shouldCreateUser=false impide el auto-registro desde el login.
 export async function signInWithMagicLink(email) {
   if (!supabase) throw new Error('Falta configurar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
   const { error } = await supabase.auth.signInWithOtp({

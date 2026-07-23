@@ -155,6 +155,16 @@ export function createFakePliegoPrisma(
       async findMany({ where } = {}) {
         return [...invitationRows.values()].filter((i) => matchesWhere(i, where));
       },
+      async delete({ where }) {
+        const existing = invitationRows.get(where.id);
+        if (!existing) {
+          const err = new Error('Record not found.');
+          err.code = 'P2025';
+          throw err;
+        }
+        invitationRows.delete(where.id);
+        return existing;
+      },
     },
     usageEvent: {
       async create({ data }) {

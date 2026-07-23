@@ -1,7 +1,5 @@
--- Excepción controlada al aislamiento por organización: al aceptar una invitación el
--- usuario todavía no tiene membership y, por diseño, no puede leer `invitations`
--- mediante el cliente scoped. Esta función SECURITY DEFINER es la única puerta:
--- valida token+email+caducidad y crea la membership en la misma transacción.
+-- Corrige la aceptación cuando el usuario ya pertenece a la organización:
+-- aplica el rol invitado, pero nunca degrada a un owner existente.
 CREATE OR REPLACE FUNCTION public.accept_organization_invitation(
     p_token_hash TEXT,
     p_user_id TEXT,
@@ -49,7 +47,11 @@ BEGIN
         invitation_row.role,
         CURRENT_TIMESTAMP
     )
-    ON CONFLICT ("userId", "organizationId") DO NOTHING;
+    ON CONFLICT ("userId", "organizationId") DO UPDATE
+    SET role = CASE
+        WHEN memberships.role = 'owner'::"Role" THEN memberships.role
+        ELSE EXCLUDED.role
+    END;
 
     UPDATE invitations
        SET "acceptedAt" = CURRENT_TIMESTAMP
@@ -81,7 +83,5 @@ BEGIN
 END;
 $$;
 
--- Las funciones son ejecutables por PUBLIC por defecto. Cerramos esa concesión y se
--- la dejamos únicamente al rol que despliega/usa Prisma en este proyecto.
 REVOKE ALL ON FUNCTION public.accept_organization_invitation(TEXT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.accept_organization_invitation(TEXT, TEXT, TEXT) TO CURRENT_USER;

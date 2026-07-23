@@ -17,10 +17,11 @@
 >   §14) son HISTÓRICO de la etapa "herramienta interna"** — están marcadas como superadas; no las
 >   tomes como el plan vigente.
 >
-> **Estado actual (21/07/2026):** auth (Supabase magic link invite-only + guard JWT en toda la
-> API) **ya implementado y mergeado a `main`**. Bloques 0-2 del roadmap SaaS completados (docs +
-> pipeline de entornos dev/staging). **Siguiente: Bloque 3 — implementar multi-tenancy** (orgs,
-> memberships, RLS, tests de aislamiento), en rama `feat/tenancy`. Ver `docs/BLOQUE-1`.
+> **Estado actual (23/07/2026):** Bloque 3 de multi-tenancy en curso. Fases 1–3 (schema,
+> `requireMember` y scoping completo de API/frontend) están en
+> `feat/tenancy-3-scoping`; la fase 4 (endpoints de org/invitaciones/miembros +
+> onboarding) está implementada en `feat/tenancy-4-onboarding`. Pendiente el contract
+> final: `organizationId NOT NULL`, RLS y tests de aislamiento contra Postgres real.
 
 ---
 

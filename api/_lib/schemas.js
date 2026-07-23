@@ -120,6 +120,20 @@ export const pliegoPatchSchema = z.object({
   message: 'Debe indicarse al menos un campo a actualizar.',
 });
 
+// --- Organizaciones e invitaciones (Bloque 3, fase 4) ---
+export const organizationCreateSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+}).strict();
+
+export const invitationCreateSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  role: z.enum(['owner', 'member']).default('member'),
+}).strict();
+
+export const invitationAcceptSchema = z.object({
+  token: z.string().trim().min(32).max(256),
+}).strict();
+
 // --- Exportación a PowerPoint (api/pliegos/[id]/presentation.js) ---
 //
 // Fila scoped que el endpoint relee de la BD antes de generar. Se valida de forma

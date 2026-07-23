@@ -59,10 +59,28 @@ describe('handler GET /api/orgs', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('responde 405 para métodos que no sean GET', async () => {
+  it('responde 405 para métodos no soportados', async () => {
     const res = createFakeRes();
-    await handler({ method: 'POST', headers }, res, fakePrisma());
+    await handler({ method: 'PUT', headers }, res, fakePrisma());
     expect(res.statusCode).toBe(405);
+  });
+
+  it('crea una organización y convierte al usuario en owner', async () => {
+    const prisma = fakePrisma();
+    const res = createFakeRes();
+    await handler({ method: 'POST', headers, body: { name: 'Nueva Consultora' } }, res, prisma);
+    expect(res.statusCode).toBe(201);
+    expect(res.body).toMatchObject({ name: 'Nueva Consultora', slug: 'nueva-consultora', role: 'owner' });
+    expect(await listMyOrgs(prisma, TEST_USER.id)).toContainEqual(expect.objectContaining({
+      id: res.body.id,
+      role: 'owner',
+    }));
+  });
+
+  it('rechaza nombres de organización inválidos', async () => {
+    const res = createFakeRes();
+    await handler({ method: 'POST', headers, body: { name: ' ' } }, res, fakePrisma());
+    expect(res.statusCode).toBe(400);
   });
 
   it('responde 500 si falla la consulta', async () => {

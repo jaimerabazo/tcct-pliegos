@@ -7,6 +7,7 @@ import acceptHandler from '../invitations/accept.js';
 import { createFakePliegoPrisma } from '../_lib/testFakePrisma.js';
 import { createFakeRes } from '../_lib/testFakeRes.js';
 import { authHeaders, TEST_USER } from '../_lib/testAuth.js';
+import { inviteUserByEmail } from '../_lib/supabaseAdmin.js';
 
 const ownerHeaders = {
   ...(await authHeaders()),
@@ -61,6 +62,52 @@ describe('fase 4: invitaciones y miembros', () => {
     }, acceptRes, prisma);
     expect(acceptRes.statusCode).toBe(200);
     expect(acceptRes.body).toMatchObject({ organizationId: 'org-a', role: 'member' });
+  });
+
+  it('conserva la invitación y envía magic link si el usuario ya existe en Auth', async () => {
+    const prisma = fakePrisma();
+    const magicLinkCalls = [];
+    const authClient = {
+      auth: {
+        admin: {
+          inviteUserByEmail: async () => ({
+            data: { user: null },
+            error: { code: 'email_exists', status: 422 },
+          }),
+        },
+        signInWithOtp: async (credentials) => {
+          magicLinkCalls.push(credentials);
+          return { data: {}, error: null };
+        },
+      },
+    };
+    const res = createFakeRes();
+
+    await invitationHandler({
+      method: 'POST',
+      headers: ownerHeaders,
+      query: { id: 'org-a' },
+      body: { email: 'existing@example.com', role: 'owner' },
+    }, res, prisma, {
+      env: { APP_URL: 'https://app.example.com' },
+      inviteUser: (email, redirectTo) => inviteUserByEmail(
+        email,
+        redirectTo,
+        { client: authClient },
+      ),
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(await prisma.invitation.findMany({
+      where: { organizationId: 'org-a' },
+    })).toHaveLength(1);
+    expect(magicLinkCalls).toEqual([{
+      email: 'existing@example.com',
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: expect.stringContaining('invitation='),
+      },
+    }]);
   });
 
   it('solo permite a owners operar sobre la organización declarada', async () => {

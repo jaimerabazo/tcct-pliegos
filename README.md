@@ -52,7 +52,7 @@ En cada push/PR a `main` o `develop`, GitHub Actions (`.github/workflows/ci.yml`
    - El mapa por entorno (dev/staging/prod) está en `docs/BLOQUE-2-ENTORNOS.md §4`.
 4. Las migraciones NO se aplican a mano: `.github/workflows/migrate.yml` corre `prisma migrate deploy` a staging (push a `develop`) y a prod (push a `main`, con gate de aprobación). Ver `docs/BLOQUE-2`.
 
-**Seguridad**: todos los endpoints exigen sesión (guard JWT en `api/_lib/auth.js`); el registro es invite-only. El endpoint de invitaciones provisiona al usuario con Supabase Admin y envía el enlace de aceptación sin exponer el token interno al navegador.
+**Seguridad**: todos los endpoints exigen sesión (guard JWT en `api/_lib/auth.js`); el registro es invite-only. El endpoint de invitaciones provisiona con Supabase Admin a los usuarios nuevos y envía un magic link a los ya registrados, siempre con el enlace de aceptación de organización y sin exponer el token interno al navegador.
 
 **Límite conocido**: las Vercel Functions (Node) aceptan hasta ~4.5 MB de payload. Pliegos muy grandes o escaneados pueden superarlo (mitigación planificada: Supabase Storage, ver `docs/ARQUITECTURA-SAAS.md §9`).
 

@@ -69,9 +69,10 @@ export default async function handler(
       },
     });
   } catch (err) {
-    // Si Auth no provisiona/envía el correo, la invitación interna no debe quedar
-    // pendiente y bloquear un reintento. La eliminación es compensatoria porque la
-    // llamada HTTP externa no puede formar parte de la transacción de Postgres.
+    // Si Auth no provisiona ni envía el correo (invite para nuevos, magic link para
+    // existentes), la invitación interna no debe quedar pendiente y bloquear un
+    // reintento. La eliminación es compensatoria porque la llamada HTTP externa no
+    // puede formar parte de la transacción de Postgres.
     if (invitation && ['AUTH_INVITE_FAILED', 'AUTH_INVITE_NOT_CONFIGURED', 'APP_URL_NOT_CONFIGURED'].includes(err?.code)) {
       try {
         await client.invitation.delete({ where: { id: invitation.id } });

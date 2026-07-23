@@ -30,11 +30,17 @@ export async function authHeader() {
 // mediante Supabase Admin; shouldCreateUser=false impide el auto-registro desde el login.
 export async function signInWithMagicLink(email) {
   if (!supabase) throw new Error('Falta configurar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
+  // Conserva la URL que llevó al usuario al login. En particular, una invitación
+  // abierta sin sesión necesita recuperar `?invitation=…` después del magic link
+  // para que OrgGate pueda aceptarla. El hash se excluye porque Supabase puede
+  // reservarlo para devolver los datos de la sesión.
+  const redirectUrl = new URL(window.location.href);
+  redirectUrl.hash = '';
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
       shouldCreateUser: false,
-      emailRedirectTo: window.location.origin,
+      emailRedirectTo: redirectUrl.toString(),
     },
   });
   if (error) throw new Error(error.message);

@@ -4,9 +4,9 @@
 > manos fuera de producción. Mitad lección, mitad runbook: las tareas de dashboard son
 > de Jaime (🧑‍💻), las de repo ya están hechas en este bloque (🤖).
 >
-> Estado: **CERRADO** (21/07/2026). Región del proyecto actual: **Irlanda (eu-west-1) ✅** →
-> sirve como `dev`. Resultado: 2 entornos (dev + staging), prod aplazado (ver §0); pipeline de
-> migraciones a staging funcionando. Siguiente: Bloque 3 (implementación de tenancy).
+> Estado: **CERRADO** (actualizado el 24/07/2026). Región del proyecto actual:
+> **Irlanda (eu-west-1) ✅**. Hay dos entornos (dev + staging), prod sigue aplazado y el
+> pipeline ha llevado las migraciones del Bloque 3 a staging.
 
 ---
 
@@ -115,6 +115,8 @@ Suena a burocracia hasta el día que te ahorra el primer incendio. Regla mnemot�
 | Variable | dev (.env.local) | staging (Vercel Preview + GH secret) | prod (Vercel Prod + GH secret) |
 |---|---|---|---|
 | `DATABASE_URL` (pooler) | Supabase dev | Supabase staging | Supabase prod |
+| `SUPABASE_URL` | proyecto dev | proyecto staging | proyecto prod |
+| `SUPABASE_SERVICE_ROLE_KEY` | proyecto dev | proyecto staging | proyecto prod |
 | `SUPABASE_JWT_SECRET` | dev | staging | prod |
 | `VITE_SUPABASE_URL` | dev | staging | prod |
 | `VITE_SUPABASE_ANON_KEY` | dev | staging | prod |
@@ -131,8 +133,11 @@ presupuesto del mes. Esto es control de blast radius aplicado al COGS.
 
 **Dos almacenes de secretos, dos consumidores** (fuente de confusión clásica):
 - **Vercel env vars** → los lee la APP desplegada (functions + build del frontend).
-- **GitHub Actions secrets** → los lee el CI (solo necesita `DATABASE_URL_STAGING` y
-  `DATABASE_URL_PROD` para las migraciones).
+- **GitHub Environment secrets** → los lee el CI. Cada environment (`staging` o
+  `production`) expone un secret llamado `DATABASE_URL`.
+
+Son valores independientes. Que `prisma migrate deploy` funcione en GitHub no demuestra
+que el `DATABASE_URL` configurado en Vercel sea correcto.
 
 ---
 
@@ -152,9 +157,8 @@ reviewers → tú): aunque estés solo, ese clic consciente antes de tocar la BD
 producción es tu "regla de dos personas" unipersonal. Te obliga a leer QUÉ migración vas
 a aplicar. Los incidentes de BD casi nunca vienen de no saber — vienen de no mirar.
 
-**Nota de diseño**: `migrate.yml` está guardado con un check de secrets — hasta que
-existan `DATABASE_URL_STAGING`/`DATABASE_URL_PROD` en GitHub, los jobs se saltan con un
-aviso en vez de fallar en rojo. El pipeline se activa solo al completar el runbook.
+**Nota de diseño**: `migrate.yml` comprueba el secret `DATABASE_URL` del GitHub
+Environment correspondiente. Si falta, el job avisa y termina en verde.
 
 ---
 
@@ -164,15 +168,18 @@ aviso en vez de fallar en rojo. El pipeline se activa solo al completar el runbo
 - [x] 1. Renombrar mentalmente el proyecto actual como **dev** (opcional: renombrarlo "pliegos-dev" en Settings → General).
 - [x] 2. Crear proyecto **staging** — región **Ireland (eu-west-1)**. Anotar: Project URL, anon key, JWT Secret, y el connection string del **Session pooler** (¡el pooler, no el Direct! — recuerda el gotcha IPv6 de CLAUDE.md §5).
 - [~] 3. ~~Crear proyecto **prod**~~ → **APLAZADO** (límite de 2 proyectos del plan free, ver §0). Se crea con el primer piloto de pago, subiendo a Supabase Pro.
-- [ ] 4. En staging: Authentication → desactivar "Allow new users to sign up" (mismo estado que dev; el self-service de orgs llega en Bloque 3).
+- [x] 4. En staging: configurar Auth invite-only, Redirect URLs y SMTP para los magic
+  links. El self-service crea organizaciones, no cuentas sin invitación.
 
 **Anthropic Console**:
 - [x] 5. Crear 3 API keys: `pliegos-dev`, `pliegos-staging`, `pliegos-prod`. Límite de gasto bajo en dev/staging (p.ej. 25€/mes).
 - [x] 6. Sustituir la key de `.env.local` por `pliegos-dev` (la actual además estaba caducada).
 
 **Vercel** (Settings → Environment Variables):
-- [~] 7. ~~**Production** con valores de PROD~~ → APLAZADO con prod (§0). Mientras tanto, Production apunta a STAGING (mismas 5 variables que Preview) si se quiere URL pública ya.
-- [x] 8. **Preview** con scope a la rama `develop`: las 5 con valores de STAGING.
+- [~] 7. ~~**Production** con valores de PROD~~ → APLAZADO con prod (§0). Mientras
+  tanto, Production puede apuntar a STAGING si se necesita una URL pública.
+- [x] 8. **Preview** con scope a la rama `develop`: variables de BD, Auth, `APP_URL` y
+  Anthropic con valores de STAGING.
 - [x] 9. **Development**: valores de dev (o se omite: `.env.local` + `vercel env pull` ya lo cubren).
 
 **GitHub** (repo → Settings):
@@ -181,7 +188,7 @@ aviso en vez de fallar en rojo. El pipeline se activa solo al completar el runbo
 - [x] 12. Comprobar que la rama `develop` existe y está al día con `main`.
 
 **Primer viaje del pipeline (la verificación del bloque)**:
-- [ ] 13. Push de este bloque a `develop` → ver en Actions cómo `migrate.yml` aplica el schema a staging (la primera vez aplica TODAS las migraciones: crea las tablas).
+- [x] 13. Push a `develop` verificado: `migrate.yml` aplica el schema a staging.
 - [~] 14-15. ~~Viaje a prod~~ → APLAZADO con prod (§0). La verificación del bloque es que el schema llegue a **staging** (paso 13).
 
 ---
@@ -199,3 +206,28 @@ aviso en vez de fallar en rojo. El pipeline se activa solo al completar el runbo
 3. Cambios destructivos de schema → expand & contract (§3).
 4. Secrets: cada entorno los suyos; rotación si hay sospecha; jamás en el repo.
 5. `main` siempre desplegable. Si no lo está, arreglarlo es LA prioridad.
+
+## 9. Comprobación y errores habituales
+
+Comprobar el schema del entorno al que apunta `DATABASE_URL`:
+
+```bash
+npm run db:migrate:deploy
+npx prisma migrate status
+```
+
+`migrate deploy` aplica estructura y funciones; no copia datos entre entornos.
+
+En Vercel, un error Prisma `P1000 Authentication failed` significa que la Function está
+recibiendo credenciales de Postgres incorrectas. Revisar el `DATABASE_URL` del scope
+exacto del deployment — normalmente Preview para `develop`— y redesplegar después de
+cambiarlo.
+
+El formato del Session pooler es:
+
+```text
+postgresql://postgres.<project-ref>:<password>@<region>.pooler.supabase.com:5432/postgres
+```
+
+No confundir la contraseña de Postgres con la service role key, la anon key o la
+contraseña de la cuenta de Supabase.

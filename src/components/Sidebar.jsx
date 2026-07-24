@@ -1,4 +1,12 @@
-import { LayoutDashboard, FileSearch, Settings, Wand2, Sparkles, LogOut } from 'lucide-react';
+import {
+  LayoutDashboard,
+  FileSearch,
+  Settings,
+  Wand2,
+  Sparkles,
+  LogOut,
+  Users,
+} from 'lucide-react';
 import { theme } from '../theme.js';
 
 // Iniciales para el avatar a partir del email ("jaime.rabazo@x.com" → "JR").
@@ -10,7 +18,7 @@ export const emailInitials = (email) => {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 };
 
-export const Sidebar = ({ view, setView, user, onSignOut }) => (
+export const Sidebar = ({ view, setView, user, org, onSignOut }) => (
   <aside className="w-56 shrink-0 border-r flex flex-col" style={{ borderColor: theme.sidebar.border, background: theme.sidebar.bg }}>
     <div className="p-5 border-b" style={{ borderColor: theme.sidebar.border }}>
       <div className="flex items-center gap-2.5">
@@ -31,6 +39,9 @@ export const Sidebar = ({ view, setView, user, onSignOut }) => (
       {[
         { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
         { id: 'analysis', icon: FileSearch, label: 'Análisis' },
+        ...(org?.role === 'owner'
+          ? [{ id: 'team', icon: Users, label: 'Equipo' }]
+          : []),
       ].map(item => {
         const active = view === item.id;
         return (

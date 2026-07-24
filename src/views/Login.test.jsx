@@ -7,7 +7,10 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Login } from './Login.jsx';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  window.history.replaceState({}, '', '/');
+});
 
 const mockOtpResponse = ({ ok = true, status = 200, body = {} } = {}) => {
   global.fetch = vi.fn().mockResolvedValue({
@@ -43,6 +46,22 @@ describe('Login (magic link)', () => {
     const [url, opts] = global.fetch.mock.calls[0];
     expect(url).toMatch(/\/auth\/v1\/otp/);
     expect(JSON.parse(opts.body).create_user).toBe(false);
+  });
+
+  it('conserva la invitación en la URL de retorno del magic link', async () => {
+    const user = userEvent.setup();
+    mockOtpResponse();
+    window.history.replaceState({}, '', '/acceso?invitation=token-secreto&source=email#local');
+    render(<Login />);
+
+    await user.type(screen.getByLabelText('Email'), 'invitado@dominio.com');
+    await user.click(screen.getByRole('button', { name: /Enviar enlace/ }));
+
+    await screen.findByText('Revisa tu correo');
+    const [url] = global.fetch.mock.calls[0];
+    expect(new URL(url).searchParams.get('redirect_to')).toBe(
+      `${window.location.origin}/acceso?invitation=token-secreto&source=email`,
+    );
   });
 
   it('traduce el rechazo invite-only a un mensaje accionable', async () => {

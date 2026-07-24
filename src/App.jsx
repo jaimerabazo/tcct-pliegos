@@ -8,6 +8,7 @@ import { Sidebar } from './components/Sidebar.jsx';
 import { UploadModal } from './components/UploadModal.jsx';
 import { Dashboard } from './views/Dashboard.jsx';
 import { Analysis } from './views/Analysis.jsx';
+import { Team } from './views/Team.jsx';
 import { theme } from './theme.js';
 
 // Shell de la app: navegación (dashboard ↔ análisis), estado de servidor vía TanStack
@@ -76,7 +77,7 @@ export default function App({ user, org, onSignOut }) {
   return (
     <>
       <div className="min-h-screen flex" style={{ background: theme.page, fontFamily: '"Inter", -apple-system, sans-serif', color: theme.text }}>
-        <Sidebar view={view} setView={handleNavigate} user={user} onSignOut={onSignOut} />
+        <Sidebar view={view} setView={handleNavigate} user={user} org={org} onSignOut={onSignOut} />
         <main className="flex-1 overflow-auto">
           {view === 'dashboard' && (
             isLoading ? (
@@ -104,6 +105,9 @@ export default function App({ user, org, onSignOut }) {
             ) : (
               <EmptyAnalysisState onBack={() => setView('dashboard')} />
             )
+          )}
+          {view === 'team' && org.role === 'owner' && (
+            <Team user={user} org={org} />
           )}
         </main>
       </div>

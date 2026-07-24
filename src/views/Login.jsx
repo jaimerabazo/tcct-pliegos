@@ -4,7 +4,7 @@ import { theme } from '../theme.js';
 import { signInWithMagicLink, supabaseConfigured } from '../lib/supabase.js';
 
 // Mensajes de Supabase → castellano accionable. El caso estrella es el invite-only:
-// signInWithOtp con shouldCreateUser=false rechaza emails no invitados.
+// signInWithOtp con shouldCreateUser=false rechaza emails no provisionados por una invitación.
 function friendlyAuthError(message) {
   if (/signups not allowed/i.test(message)) {
     return 'Este email no tiene acceso. Pide una invitación al administrador.';

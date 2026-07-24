@@ -66,7 +66,7 @@ model Invitation {
   tokenHash      String    @unique  // se guarda el HASH (sha-256) del token, NUNCA el token.
                                     // Mismo principio que las contraseñas: si roban la BD,
                                     // no pueden usar las invitaciones pendientes.
-  expiresAt      DateTime            // 7 días; una invitación eterna es una puerta eterna
+  expiresAt      DateTime            // 1 hora, alineada con Email OTP Expiration de Supabase
   acceptedAt     DateTime?           // null = pendiente. No se borra al aceptar: es historial
   createdBy      String              // userId del que invitó (audit)
   createdAt      DateTime  @default(now())

@@ -19,7 +19,7 @@ Abre `http://localhost:5173`. **Ojo**: sin backend, el dashboard no carga pliego
 
 ### Full-stack en local (recomendado)
 
-Copia `.env.example` a `.env.local` y rellénalo: `ANTHROPIC_API_KEY`, `DATABASE_URL` (usa el **Session pooler** de Supabase, no la conexión Direct — ver `CLAUDE.md` §5), `SUPABASE_JWT_SECRET`, `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
+Copia `.env.example` a `.env.local` y rellénalo: `ANTHROPIC_API_KEY`, `DATABASE_URL` (usa el **Session pooler** de Supabase, no la conexión Direct — ver `CLAUDE.md` §5), `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`, la configuración JWT aplicable, `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
 
 ```bash
 npm install
@@ -45,14 +45,14 @@ En cada push/PR a `main` o `develop`, GitHub Actions (`.github/workflows/ci.yml`
 
 1. Push a GitHub (`jaimerabazo/tcct-pliegos`).
 2. [vercel.com](https://vercel.com) → Import Project → Deploy (detecta Vite automáticamente).
-3. En Settings → Environment Variables (Production + Preview) — las 5 del `.env.example`:
+3. En Settings → Environment Variables (Production + Preview):
    - `ANTHROPIC_API_KEY` (+ `ANTHROPIC_MODEL` opcional, por defecto `claude-sonnet-5`)
    - `DATABASE_URL` (pooler de Supabase)
-   - `SUPABASE_JWT_SECRET`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL` (dominio público estable, nunca localhost ni una URL de deployment), la configuración JWT aplicable, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
    - El mapa por entorno (dev/staging/prod) está en `docs/BLOQUE-2-ENTORNOS.md §4`.
 4. Las migraciones NO se aplican a mano: `.github/workflows/migrate.yml` corre `prisma migrate deploy` a staging (push a `develop`) y a prod (push a `main`, con gate de aprobación). Ver `docs/BLOQUE-2`.
 
-**Seguridad**: todos los endpoints exigen sesión (guard JWT en `api/_lib/auth.js`); el registro es invite-only (usuarios dados de alta desde el dashboard de Supabase).
+**Seguridad**: todos los endpoints exigen sesión (guard JWT en `api/_lib/auth.js`); el registro es invite-only. El endpoint de invitaciones provisiona con Supabase Admin a los usuarios nuevos y envía un magic link a los ya registrados. El token interno no se devuelve al navegador del owner; viaja en el enlace al navegador del invitado y `OrgGate` lo elimina inmediatamente de la URL antes de canjearlo.
 
 **Límite conocido**: las Vercel Functions (Node) aceptan hasta ~4.5 MB de payload. Pliegos muy grandes o escaneados pueden superarlo (mitigación planificada: Supabase Storage, ver `docs/ARQUITECTURA-SAAS.md §9`).
 

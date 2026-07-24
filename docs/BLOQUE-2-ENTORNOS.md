@@ -118,6 +118,7 @@ Suena a burocracia hasta el día que te ahorra el primer incendio. Regla mnemot�
 | `SUPABASE_JWT_SECRET` | dev | staging | prod |
 | `VITE_SUPABASE_URL` | dev | staging | prod |
 | `VITE_SUPABASE_ANON_KEY` | dev | staging | prod |
+| `APP_URL` | `http://localhost:3000` | dominio público estable de staging | dominio público estable de prod |
 | `ANTHROPIC_API_KEY` | key "dev" ⚠️ | key "staging" | key "prod" |
 | `ANTHROPIC_MODEL` | (opcional) | (opcional) | (opcional) |
 

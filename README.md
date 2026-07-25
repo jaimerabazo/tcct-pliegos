@@ -39,7 +39,26 @@ npm run test:coverage     # con umbral ≥90% en lo incluido en vitest.config.js
 npm run build             # build de producción
 ```
 
-En cada push/PR a `main` o `develop`, GitHub Actions (`.github/workflows/ci.yml`) corre `npm ci`, `npm run test:coverage` y `npm run build`. No necesita `DATABASE_URL` en CI — los tests usan un doble en memoria de Prisma.
+En cada push/PR a `main` o `develop`, GitHub Actions (`.github/workflows/ci.yml`) corre `npm ci`, `npm run test:coverage` y `npm run build`. No necesita `DATABASE_URL` — los tests usan un doble en memoria de Prisma.
+
+### Suite de aislamiento cross-tenant (Postgres real)
+
+Aparte de la unitaria, hay una suite de integración que verifica contra un Postgres de
+verdad que **ninguna organización puede ver ni tocar los datos de otra** (el contrato del
+`docs/BLOQUE-1 §6`). Comprueba lo que un doble en memoria no puede: constraints, cascadas
+y —desde la fase 5b— las políticas RLS.
+
+```bash
+npm run test:integration   # necesita DATABASE_URL apuntando a un Postgres real
+```
+
+En CI corre en su propio job con un **contenedor de Postgres efímero**, que además aplica
+las migraciones desde cero (`migrate deploy`) — así se valida de paso que la carpeta de
+migraciones se aplica limpia sobre una BD vacía.
+
+En local, si no tienes Docker, puedes lanzarla contra tu BD de desarrollo: **los tests
+crean sus propios datos con ids prefijados `it-` y solo borran lo que ellos crearon** (no
+hacen `TRUNCATE`), así que no tocan tus datos de trabajo.
 
 ## Desplegarlo en Vercel
 

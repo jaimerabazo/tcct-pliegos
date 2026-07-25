@@ -7,6 +7,10 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './src/test/setup.js',
+    // La suite de integración necesita un Postgres real y vive en su propia config
+    // (vitest.integration.config.js). Excluirla aquí mantiene `npm test` sin dependencias
+    // de infraestructura — el gate de siempre sigue corriendo en cualquier máquina.
+    exclude: ['**/node_modules/**', '**/dist/**', 'tests/integration/**'],
     // Env FAKE de Supabase para que los tests sean deterministas en local y CI (vitest
     // no carga .env.local). Nunca se toca la red: los tests que ejercitan supabase-js
     // mockean global.fetch, y getSession/signOut sin sesión son locales (storage).

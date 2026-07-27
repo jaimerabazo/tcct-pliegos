@@ -199,8 +199,9 @@ describe('RBAC owner/member (Postgres real)', () => {
     });
     expect(pendientes).toHaveLength(1);
     expect(pendientes[0].email).toBe('nuevo@org-a.test');
-    // El token en claro nunca se persiste: en BD solo vive su hash.
-    expect(pendientes[0].tokenHash).not.toBe(res.body?.token);
+    // En BD solo vive un SHA-256 y la respuesta tampoco expone el token en claro.
+    expect(pendientes[0].tokenHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(res.body).not.toHaveProperty('token');
   });
 
   it('Berta no puede listar las invitaciones de A (403 por membership)', async () => {

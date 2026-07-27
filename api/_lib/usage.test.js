@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
-import { estimateCost, recordUsage } from './usage.js';
+import { describe, it, expect, vi } from 'vitest';
+import { estimateCost, recordUsage, recordUsageBestEffort } from './usage.js';
 import { createFakePliegoPrisma } from './testFakePrisma.js';
 
 describe('estimateCost', () => {
@@ -49,8 +49,32 @@ describe('recordUsage', () => {
     expect(event).toMatchObject({ tokensIn: 0, tokensOut: 0, pliegoId: null });
   });
 
-  it('NUNCA lanza: si la BD falla, loguea y devuelve null (la operación del usuario no se rompe)', async () => {
+  it('propaga el error para que la transacción pueda hacer rollback', async () => {
     const prisma = { usageEvent: { create: () => { throw new Error('boom'); } } };
-    await expect(recordUsage(prisma, base)).resolves.toBeNull();
+    await expect(recordUsage(prisma, base)).rejects.toThrow('boom');
+  });
+
+  it('trata el fallo fuera de la transacción y devuelve null', async () => {
+    let transactionFinished = false;
+    const error = new Error('metering SQL error');
+    const prisma = {
+      async $transaction(callback) {
+        try {
+          return await callback(this);
+        } finally {
+          transactionFinished = true;
+        }
+      },
+      async $executeRawUnsafe() {},
+      async $executeRaw() {},
+      usageEvent: { create: () => { throw error; } },
+    };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(recordUsageBestEffort(prisma, 'org-a', base)).resolves.toBeNull();
+
+    expect(transactionFinished).toBe(true);
+    expect(consoleError).toHaveBeenCalledWith('No se ha podido registrar el usage_event:', error);
+    consoleError.mockRestore();
   });
 });

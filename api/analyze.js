@@ -3,7 +3,7 @@ import { prisma } from './_lib/prisma.js';
 import { pliegoFromAnalysisSchema, analysisDataSchema } from './_lib/schemas.js';
 import { requireMember } from './_lib/authz.js';
 import { withTenant } from './_lib/tenantDb.js';
-import { recordUsage } from './_lib/usage.js';
+import { recordUsageBestEffort } from './_lib/usage.js';
 import { parseShortDate } from '../src/logic.js';
 
 export const config = {
@@ -339,25 +339,23 @@ export default async function handler(req, res, client = prisma) {
       return;
     }
 
-    // Persistencia y metering comparten contexto de tenant: ambas escrituras quedan bajo
-    // las políticas RLS, que rechazarían una fila con organizationId de otro tenant.
-    // La llamada a Claude ya ha terminado, así que la transacción es corta.
-    const saved = await withTenant(client, ctx.orgId, async (db) => {
-      const row = await persistAnalysis(db, { pliego: pliegoCheck.data, analysis: analysisCheck.data }, {
+    // La escritura principal se confirma antes de intentar el metering. Si usage_events
+    // falla, su transacción separada no puede deshacer un análisis ya guardado.
+    const saved = await withTenant(client, ctx.orgId, (db) =>
+      persistAnalysis(db, { pliego: pliegoCheck.data, analysis: analysisCheck.data }, {
         organizationId: ctx.orgId,
         userId: ctx.user.id,
-      });
+      }));
 
-      // Metering: una fila por operación LLM (no lanza nunca; el análisis ya está a salvo).
-      await recordUsage(db, {
-        organizationId: ctx.orgId,
-        userId: ctx.user.id,
-        type: 'analyze',
-        model: MODEL,
-        usage: response.usage,
-        pliegoId: row.id,
-      });
-      return row;
+    // Best effort: abre y cierra su propia transacción; cualquier fallo se trata después
+    // del rollback y no cambia la respuesta al usuario.
+    await recordUsageBestEffort(client, ctx.orgId, {
+      organizationId: ctx.orgId,
+      userId: ctx.user.id,
+      type: 'analyze',
+      model: MODEL,
+      usage: response.usage,
+      pliegoId: saved.id,
     });
     // El frontend (UploadModal → handleUploadComplete) espera { pliego, analysis }, no la fila
     // plana de Prisma. Devolvemos los datos ya validados (pliego con fechaLimite en formato corto,

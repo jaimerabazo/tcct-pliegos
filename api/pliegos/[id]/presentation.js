@@ -5,7 +5,7 @@ import { buildSlideSpecs, presentationFilename } from '../../_lib/presentationBu
 import { renderPptx } from '../../_lib/presentationRenderer.js';
 import { requireMember } from '../../_lib/authz.js';
 import { withTenant } from '../../_lib/tenantDb.js';
-import { recordUsage } from '../../_lib/usage.js';
+import { recordUsageBestEffort } from '../../_lib/usage.js';
 
 // Generación más rápida que /api/analyze (no sube un PDF, solo sintetiza un resumen
 // corto sobre datos ya estructurados). 60s sobra; ver también vercel.json.
@@ -167,16 +167,16 @@ export default async function handler(req, res, client = prisma) {
       return;
     }
 
-    // Metering: una fila por operación LLM (no lanza nunca — la presentación no debe
-    // fallar porque el metering falle).
-    await withTenant(client, ctx.orgId, (db) => recordUsage(db, {
+    // Metering en su propia transacción best-effort: un error hace rollback del evento,
+    // pero no convierte una presentación ya generada por Claude en un 502.
+    await recordUsageBestEffort(client, ctx.orgId, {
       organizationId: ctx.orgId,
       userId: ctx.user.id,
       type: 'presentation',
       model: MODEL,
       usage: response.usage,
       pliegoId: pliego.id,
-    }));
+    });
 
     const { tagline, resumenFinal } = check.data;
     const specs = buildSlideSpecs({ pliego, analysisData: pliego.analysisData, tagline, resumenFinal });

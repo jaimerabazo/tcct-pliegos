@@ -8,6 +8,8 @@
 // existe un precio intro más bajo hasta 08/2026 — usamos el de lista, estimación
 // conservadora del COGS). Modelo desconocido → costEstimate null, los tokens quedan
 // registrados igualmente y el Bloque 4 puede recalcular.
+import { withTenant } from './tenantDb.js';
+
 const PRICE_USD_PER_MTOK = {
   'claude-sonnet-5': { input: 3, output: 15 },
 };
@@ -19,24 +21,32 @@ export function estimateCost(model, tokensIn, tokensOut) {
   return (tokensIn * price.input + tokensOut * price.output) / 1_000_000;
 }
 
-// Inserta el evento de metering. NUNCA lanza: el análisis/presentación del usuario no
-// debe fallar porque el metering tenga un mal día — se loguea y se sigue. (Cuando el
-// metering sea la base de límites de plan en el Bloque 4, este trade-off se revisará.)
+// Inserta el evento de metering dentro de la transacción que recibe. No captura errores:
+// Postgres invalida toda la transacción ante un error SQL, así que solo se puede tratar
+// el fallo de forma segura DESPUÉS de que withTenant haya hecho rollback.
 export async function recordUsage(client, { organizationId, userId, type, model, usage, pliegoId = null }) {
   const tokensIn = usage?.input_tokens ?? 0;
   const tokensOut = usage?.output_tokens ?? 0;
+  return client.usageEvent.create({
+    data: {
+      organizationId,
+      userId,
+      type,
+      tokensIn,
+      tokensOut,
+      costEstimate: estimateCost(model, tokensIn, tokensOut),
+      pliegoId,
+    },
+  });
+}
+
+// Frontera best-effort: el catch queda FUERA de la transacción de metering. Así un error
+// SQL primero provoca el rollback limpio de esa transacción y después se ignora, sin
+// contaminar la operación principal del usuario. (Cuando el metering sea la base de
+// límites de plan en el Bloque 4, este trade-off se revisará.)
+export async function recordUsageBestEffort(client, organizationId, event) {
   try {
-    return await client.usageEvent.create({
-      data: {
-        organizationId,
-        userId,
-        type,
-        tokensIn,
-        tokensOut,
-        costEstimate: estimateCost(model, tokensIn, tokensOut),
-        pliegoId,
-      },
-    });
+    return await withTenant(client, organizationId, (db) => recordUsage(db, event));
   } catch (err) {
     console.error('No se ha podido registrar el usage_event:', err);
     return null;

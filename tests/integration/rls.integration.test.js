@@ -8,20 +8,25 @@
 // Es la diferencia entre "confío en no tener bugs" y "aunque tenga un bug, no hay fuga".
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withTenant, APP_TENANT_ROLE } from '../../api/_lib/tenantDb.js';
-import { createOrgFixture, createTestPrisma, cleanupOrgs } from './helpers/testDb.js';
+import { createAdminPrisma, createOrgFixture, createTestPrisma, cleanupOrgs } from './helpers/testDb.js';
 
+// `prisma` = cliente de runtime, sujeto a RLS (es el que ejecuta los "ataques").
+// `admin`  = observador con visión completa de la tabla. Sin él, comprobar el resultado
+// de un ataque desde el cliente de runtime daría null tanto si la fila sobrevivió intacta
+// como si desapareció: el test pasaría sin demostrar nada.
 const prisma = createTestPrisma();
+const admin = createAdminPrisma();
 
 let orgA;
 let orgB;
 
 beforeAll(async () => {
-  orgA = await createOrgFixture(prisma, {
+  orgA = await createOrgFixture(admin, {
     label: 'rls-a',
     members: [{ userId: 'rls-user-a', role: 'owner' }],
     pliegos: [{ titulo: 'Confidencial de A' }, { titulo: 'Otro de A' }],
   });
-  orgB = await createOrgFixture(prisma, {
+  orgB = await createOrgFixture(admin, {
     label: 'rls-b',
     members: [{ userId: 'rls-user-b', role: 'owner' }],
     pliegos: [{ titulo: 'Confidencial de B' }],
@@ -29,8 +34,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanupOrgs(prisma, [orgA?.organizationId, orgB?.organizationId].filter(Boolean));
-  await prisma.$disconnect();
+  await cleanupOrgs(admin, [orgA?.organizationId, orgB?.organizationId].filter(Boolean));
+  await Promise.all([prisma.$disconnect(), admin.$disconnect()]);
 });
 
 describe('RLS: el motor filtra aunque el código no lo haga', () => {
@@ -66,7 +71,7 @@ describe('RLS: el motor filtra aunque el código no lo haga', () => {
       },
     }))).rejects.toThrow();
 
-    const enB = await prisma.pliego.count({ where: { organizationId: orgB.organizationId } });
+    const enB = await admin.pliego.count({ where: { organizationId: orgB.organizationId } });
     expect(enB).toBe(1); // sigue teniendo solo el suyo
   });
 
@@ -78,7 +83,7 @@ describe('RLS: el motor filtra aunque el código no lo haga', () => {
       data: { titulo: 'SECUESTRADO' },
     }));
 
-    const enBd = await prisma.pliego.findUnique({ where: { id: objetivo.id } });
+    const enBd = await admin.pliego.findUnique({ where: { id: objetivo.id } });
     expect(enBd.titulo).toBe(objetivo.titulo);
   });
 
@@ -89,7 +94,7 @@ describe('RLS: el motor filtra aunque el código no lo haga', () => {
       where: { id: objetivo.id },
     }));
 
-    expect(await prisma.pliego.findUnique({ where: { id: objetivo.id } })).not.toBeNull();
+    expect(await admin.pliego.findUnique({ where: { id: objetivo.id } })).not.toBeNull();
   });
 
   it('sin organización en el contexto no se ve NADA (fail-closed)', async () => {
@@ -170,7 +175,7 @@ describe('RLS: metering y auditoría son append-only', () => {
     }));
     expect(borrado.count).toBe(0);
 
-    const intacta = await prisma.auditEntry.findUnique({ where: { id: creado.id } });
+    const intacta = await admin.auditEntry.findUnique({ where: { id: creado.id } });
     expect(intacta.action).toBe('pliego.delete');
   });
 

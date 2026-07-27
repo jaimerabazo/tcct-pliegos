@@ -11,15 +11,38 @@ import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '../../../src/generated/prisma/index.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 
-export function createTestPrisma() {
-  const connectionString = process.env.DATABASE_URL;
+function prismaFor(connectionString, variable) {
   if (!connectionString) {
     throw new Error(
-      'La suite de integración necesita DATABASE_URL (Postgres real). '
+      `La suite de integración necesita ${variable} (Postgres real). `
       + 'En CI lo aporta el contenedor de servicio; en local, exporta el de tu BD de desarrollo.',
     );
   }
   return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+}
+
+// Cliente de RUNTIME: el que usa la aplicación. En CI conecta con un rol que no puede
+// eludir el RLS, así que está sujeto a las políticas igual que en producción.
+export function createTestPrisma() {
+  return prismaFor(process.env.DATABASE_URL, 'DATABASE_URL');
+}
+
+// Cliente OBSERVADOR: para montar fixtures y para comprobar qué hay REALMENTE en la tabla
+// después de un intento de ataque.
+//
+// Es imprescindible que sea distinto del de runtime. Con el RLS activo, una verificación
+// hecha desde el cliente de runtime no distingue "la fila sigue intacta" de "la fila
+// existe pero no puedo verla": ambas devuelven null, y un test podría pasar por la razón
+// equivocada. El observador ve la tabla entera y responde a la única pregunta que importa:
+// ¿el atacante consiguió cambiar algo?
+//
+// En CI es el rol propietario (MIGRATION_DATABASE_URL); en local, la misma conexión de
+// desarrollo, que ya tiene privilegios de propietario.
+export function createAdminPrisma() {
+  return prismaFor(
+    process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL,
+    'MIGRATION_DATABASE_URL o DATABASE_URL',
+  );
 }
 
 // Prefijo común a todo lo que crea la suite: hace obvio en la BD qué filas son de tests

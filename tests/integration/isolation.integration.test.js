@@ -16,7 +16,8 @@ import invitationsHandler from '../../api/orgs/[id]/invitations.js';
 import { createFakeRes } from '../../api/_lib/testFakeRes.js';
 import { authHeaders } from '../../api/_lib/testAuth.js';
 import { MOCK_ANALYSIS } from '../../prisma/seed.js';
-import { createOrgFixture, createTestPrisma, cleanupOrgs, testId } from './helpers/testDb.js';
+import { withTenant } from '../../api/_lib/tenantDb.js';
+import { createAdminPrisma, createOrgFixture, createTestPrisma, cleanupOrgs, testId } from './helpers/testDb.js';
 
 // Análisis con forma válida: el handler valida el body ANTES de comprobar la pertenencia,
 // así que un body inválido daría 400 sin llegar al guard scoped (ese 400 no filtra nada:
@@ -24,7 +25,11 @@ import { createOrgFixture, createTestPrisma, cleanupOrgs, testId } from './helpe
 // que supere la validación y llegue hasta la query scoped.
 const ANALISIS_VALIDO = MOCK_ANALYSIS['2026-7008'];
 
+// `prisma` = cliente de runtime, sujeto a RLS igual que en producción (en CI conecta con
+// un rol que no puede eludirlo). `admin` = observador con visión completa: monta los
+// fixtures y comprueba qué quedó REALMENTE en la tabla tras cada intento cross-tenant.
 const prisma = createTestPrisma();
+const admin = createAdminPrisma();
 
 const ANA = { userId: testId('ana'), email: 'ana@org-a.test' };
 const MARC = { userId: testId('marc'), email: 'marc@org-a.test' };
@@ -38,12 +43,12 @@ let marcHeaders;
 let bertaHeaders;
 
 beforeAll(async () => {
-  orgA = await createOrgFixture(prisma, {
+  orgA = await createOrgFixture(admin, {
     label: 'org-a',
     members: [{ ...ANA, role: 'owner' }, { ...MARC, role: 'member' }],
     pliegos: [{ titulo: 'Pliego confidencial de A' }, { titulo: 'Segundo pliego de A' }],
   });
-  orgB = await createOrgFixture(prisma, {
+  orgB = await createOrgFixture(admin, {
     label: 'org-b',
     members: [{ ...BERTA, role: 'owner' }],
     pliegos: [{ titulo: 'Pliego de B' }],
@@ -59,8 +64,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await cleanupOrgs(prisma, [orgA?.organizationId, orgB?.organizationId].filter(Boolean));
-  await prisma.$disconnect();
+  await cleanupOrgs(admin, [orgA?.organizationId, orgB?.organizationId].filter(Boolean));
+  await Promise.all([prisma.$disconnect(), admin.$disconnect()]);
 });
 
 describe('aislamiento cross-tenant (Postgres real)', () => {
@@ -110,7 +115,7 @@ describe('aislamiento cross-tenant (Postgres real)', () => {
     );
 
     expect(res.statusCode).toBe(404);
-    const enBd = await prisma.pliego.findUnique({ where: { id: objetivo.id } });
+    const enBd = await admin.pliego.findUnique({ where: { id: objetivo.id } });
     expect(enBd.titulo).toBe(objetivo.titulo);
     expect(enBd.organizationId).toBe(orgA.organizationId);
   });
@@ -130,7 +135,7 @@ describe('aislamiento cross-tenant (Postgres real)', () => {
     );
 
     expect(res.statusCode).toBe(404);
-    const enBd = await prisma.pliego.findUnique({ where: { id: objetivo.id } });
+    const enBd = await admin.pliego.findUnique({ where: { id: objetivo.id } });
     expect(enBd.analysisData).toBeNull();
   });
 
@@ -194,7 +199,7 @@ describe('RBAC owner/member (Postgres real)', () => {
     );
 
     expect(res.statusCode).toBe(201);
-    const pendientes = await prisma.invitation.findMany({
+    const pendientes = await admin.invitation.findMany({
       where: { organizationId: orgA.organizationId, acceptedAt: null },
     });
     expect(pendientes).toHaveLength(1);
@@ -238,17 +243,19 @@ describe('escritura principal de /api/analyze (Postgres real)', () => {
       analysis: ANALISIS_VALIDO,
     };
 
-    await persistAnalysis(prisma, result, {
+    // Igual que el handler real de /api/analyze: la escritura va dentro del contexto de
+    // tenant, así que además de la clave compuesta se ejercita el WITH CHECK del RLS.
+    await withTenant(prisma, orgA.organizationId, (db) => persistAnalysis(db, result, {
       organizationId: orgA.organizationId,
       userId: ANA.userId,
-    });
-    await persistAnalysis(prisma, result, {
+    }));
+    await withTenant(prisma, orgB.organizationId, (db) => persistAnalysis(db, result, {
       organizationId: orgB.organizationId,
       userId: BERTA.userId,
-    });
+    }));
 
     const [enA, enB] = await Promise.all([
-      prisma.pliego.findUnique({
+      admin.pliego.findUnique({
         where: {
           organizationId_expediente: {
             organizationId: orgA.organizationId,
@@ -256,7 +263,7 @@ describe('escritura principal de /api/analyze (Postgres real)', () => {
           },
         },
       }),
-      prisma.pliego.findUnique({
+      admin.pliego.findUnique({
         where: {
           organizationId_expediente: {
             organizationId: orgB.organizationId,
@@ -285,7 +292,7 @@ describe('integridad del modelo (lo que un doble en memoria no puede verificar)'
     const label = testId('rollback-fixture');
     const duplicatedUserId = testId('duplicated-member');
 
-    await expect(createOrgFixture(prisma, {
+    await expect(createOrgFixture(admin, {
       label,
       // La segunda membership viola la PK compuesta y fuerza un fallo después de
       // haber intentado crear la organización y la primera membership.
@@ -295,14 +302,14 @@ describe('integridad del modelo (lo que un doble en memoria no puede verificar)'
       ],
     })).rejects.toMatchObject({ code: 'P2002' });
 
-    expect(await prisma.organization.findFirst({
+    expect(await admin.organization.findFirst({
       where: { name: `Org ${label}` },
     })).toBeNull();
   });
 
   it('el mismo expediente puede existir en dos organizaciones distintas', async () => {
     const expediente = `2026/COMPARTIDO-${Date.now()}`;
-    const enA = await prisma.pliego.create({
+    const enA = await admin.pliego.create({
       data: {
         organizationId: orgA.organizationId,
         expediente,
@@ -314,7 +321,7 @@ describe('integridad del modelo (lo que un doble en memoria no puede verificar)'
         ens: 'Alto',
       },
     });
-    const enB = await prisma.pliego.create({
+    const enB = await admin.pliego.create({
       data: {
         organizationId: orgB.organizationId,
         expediente,
@@ -330,7 +337,7 @@ describe('integridad del modelo (lo que un doble en memoria no puede verificar)'
     expect(enA.id).not.toBe(enB.id);
 
     // ...pero repetirlo DENTRO de la misma organización sí viola el unique compuesto.
-    await expect(prisma.pliego.create({
+    await expect(admin.pliego.create({
       data: {
         organizationId: orgA.organizationId,
         expediente,
@@ -345,16 +352,16 @@ describe('integridad del modelo (lo que un doble en memoria no puede verificar)'
   });
 
   it('borrar una organización arrastra sus datos (cascada real del schema)', async () => {
-    const efimera = await createOrgFixture(prisma, {
+    const efimera = await createOrgFixture(admin, {
       label: 'cascada',
       members: [{ userId: testId('user'), role: 'owner' }],
       pliegos: [{ titulo: 'Pliego efímero' }],
     });
 
-    await cleanupOrgs(prisma, [efimera.organizationId]);
+    await cleanupOrgs(admin, [efimera.organizationId]);
 
-    expect(await prisma.pliego.findUnique({ where: { id: efimera.pliegos[0].id } })).toBeNull();
-    expect(await prisma.membership.findMany({
+    expect(await admin.pliego.findUnique({ where: { id: efimera.pliegos[0].id } })).toBeNull();
+    expect(await admin.membership.findMany({
       where: { organizationId: efimera.organizationId },
     })).toHaveLength(0);
   });

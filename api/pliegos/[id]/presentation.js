@@ -112,7 +112,8 @@ export default async function handler(req, res, client = prisma) {
 
   let storedPliego;
   try {
-    storedPliego = await getPresentationPliego(client, req.query?.id, ctx.orgId);
+    storedPliego = await withTenant(client, ctx.orgId, (db) =>
+      getPresentationPliego(db, req.query?.id, ctx.orgId));
   } catch (err) {
     console.error('Error verificando el pliego para la presentación:', err);
     res.status(500).json({ error: 'No se ha podido verificar el pliego.' });

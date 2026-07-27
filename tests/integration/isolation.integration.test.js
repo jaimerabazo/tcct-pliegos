@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import listPliegosHandler from '../../api/pliegos/index.js';
 import pliegoByIdHandler from '../../api/pliegos/[id].js';
 import analysisHandler from '../../api/pliegos/[id]/analysis.js';
+import { persistAnalysis } from '../../api/analyze.js';
 import invitationsHandler from '../../api/orgs/[id]/invitations.js';
 import { createFakeRes } from '../../api/_lib/testFakeRes.js';
 import { authHeaders } from '../../api/_lib/testAuth.js';
@@ -216,6 +217,65 @@ describe('RBAC owner/member (Postgres real)', () => {
     );
 
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('escritura principal de /api/analyze (Postgres real)', () => {
+  it('persistAnalysis guarda el mismo expediente separado para A y B', async () => {
+    const expediente = `2026/ANALYZE-${Date.now()}`;
+    const result = {
+      pliego: {
+        expediente,
+        titulo: 'Pliego analizado para dos organizaciones',
+        organismo: 'Organismo de prueba',
+        importe: 1000000,
+        lotes: 1,
+        fechaLimite: '15 jul 2026',
+        procedimiento: 'Abierto',
+        ens: 'Alto',
+      },
+      analysis: ANALISIS_VALIDO,
+    };
+
+    await persistAnalysis(prisma, result, {
+      organizationId: orgA.organizationId,
+      userId: ANA.userId,
+    });
+    await persistAnalysis(prisma, result, {
+      organizationId: orgB.organizationId,
+      userId: BERTA.userId,
+    });
+
+    const [enA, enB] = await Promise.all([
+      prisma.pliego.findUnique({
+        where: {
+          organizationId_expediente: {
+            organizationId: orgA.organizationId,
+            expediente,
+          },
+        },
+      }),
+      prisma.pliego.findUnique({
+        where: {
+          organizationId_expediente: {
+            organizationId: orgB.organizationId,
+            expediente,
+          },
+        },
+      }),
+    ]);
+
+    expect(enA).toMatchObject({
+      organizationId: orgA.organizationId,
+      expediente,
+      createdBy: ANA.userId,
+    });
+    expect(enB).toMatchObject({
+      organizationId: orgB.organizationId,
+      expediente,
+      createdBy: BERTA.userId,
+    });
+    expect(enA.id).not.toBe(enB.id);
   });
 });
 

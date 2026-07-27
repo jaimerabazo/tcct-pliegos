@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from './_lib/prisma.js';
 import { pliegoFromAnalysisSchema, analysisDataSchema } from './_lib/schemas.js';
 import { requireMember } from './_lib/authz.js';
+import { withTenant } from './_lib/tenantDb.js';
 import { recordUsage } from './_lib/usage.js';
 import { parseShortDate } from '../src/logic.js';
 
@@ -338,19 +339,25 @@ export default async function handler(req, res, client = prisma) {
       return;
     }
 
-    const saved = await persistAnalysis(client, { pliego: pliegoCheck.data, analysis: analysisCheck.data }, {
-      organizationId: ctx.orgId,
-      userId: ctx.user.id,
-    });
+    // Persistencia y metering comparten contexto de tenant: ambas escrituras quedan bajo
+    // las políticas RLS, que rechazarían una fila con organizationId de otro tenant.
+    // La llamada a Claude ya ha terminado, así que la transacción es corta.
+    const saved = await withTenant(client, ctx.orgId, async (db) => {
+      const row = await persistAnalysis(db, { pliego: pliegoCheck.data, analysis: analysisCheck.data }, {
+        organizationId: ctx.orgId,
+        userId: ctx.user.id,
+      });
 
-    // Metering: una fila por operación LLM (no lanza nunca; el análisis ya está a salvo).
-    await recordUsage(client, {
-      organizationId: ctx.orgId,
-      userId: ctx.user.id,
-      type: 'analyze',
-      model: MODEL,
-      usage: response.usage,
-      pliegoId: saved.id,
+      // Metering: una fila por operación LLM (no lanza nunca; el análisis ya está a salvo).
+      await recordUsage(db, {
+        organizationId: ctx.orgId,
+        userId: ctx.user.id,
+        type: 'analyze',
+        model: MODEL,
+        usage: response.usage,
+        pliegoId: row.id,
+      });
+      return row;
     });
     // El frontend (UploadModal → handleUploadComplete) espera { pliego, analysis }, no la fila
     // plana de Prisma. Devolvemos los datos ya validados (pliego con fechaLimite en formato corto,

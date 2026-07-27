@@ -33,6 +33,11 @@ export const testId = (label) => `${ID_PREFIX}${label}-${randomUUID()}`;
 export async function createOrgFixture(prisma, { label, members = [], pliegos = [] }) {
   const organizationId = testId(label);
   return prisma.$transaction(async (tx) => {
+    // Desde la fase 5b, `Pliego` tiene RLS: sin organización activa, un INSERT se rechaza
+    // cuando el rol de conexión no puede eludir las políticas (así conecta el CI). Fijamos
+    // el contexto para el andamiaje; el aislamiento se prueba en los tests, no aquí.
+    await tx.$executeRaw`SELECT set_config('app.org_id', ${organizationId}, true)`;
+
     await tx.organization.create({
       data: {
         id: organizationId,

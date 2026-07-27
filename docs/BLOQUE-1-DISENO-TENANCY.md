@@ -223,12 +223,30 @@ SELECT set_config('app.org_id', '<orgId verificado por requireMember>', true);
 
 **Políticas** (patrón idéntico para `pliegos`, `usage_events`, `audit_log`, `invitations`, `memberships`):
 
+> 🛠️ **CORREGIDO EN LA IMPLEMENTACIÓN (fase 5b, 26/07/2026).** Este diseño era
+> **insuficiente**: al verificarlo contra la base real se comprobó que el rol con el que
+> la app conecta en Supabase (`postgres`) tiene el atributo **`BYPASSRLS`**, que se salta
+> TODAS las políticas — y `FORCE` no lo impide (FORCE solo obliga al *propietario* de la
+> tabla; no anula `BYPASSRLS`). Aplicando este apartado tal cual, el RLS habría quedado
+> **decorativo**: prueba empírica → como `postgres` sin cambiar de rol se seguían viendo
+> las filas de todos los tenants.
+>
+> **Lo implementado**: un rol `app_tenant` sin `BYPASSRLS` y que no es propietario de las
+> tablas; el cliente de runtime hace `SET LOCAL ROLE app_tenant` + `set_config` dentro de
+> la transacción de cada request (`api/_lib/tenantDb.js`). **No se usa FORCE**: el
+> propietario debe seguir operando sin trabas en migraciones y backfills, y la protección
+> de runtime la da el cambio de rol. Ver `prisma/migrations/20260726120000_rls_tenant_isolation`.
+>
+> Otros dos detalles que solo aparecen al ejecutarlo: `GRANT ... TO CURRENT_USER` **aborta
+> la conexión** en Supabase (hay que usar `format('GRANT ... TO %I', current_user)`), y
+> `ALTER ROLE ... NOSUPERUSER` lo rechaza la extensión `supautils`.
+
 ```sql
 ALTER TABLE pliegos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pliegos FORCE ROW LEVEL SECURITY;
 -- ⚠️ FORCE es imprescindible y casi nadie lo sabe: el DUEÑO de la tabla se salta el RLS
 -- por defecto, y Prisma conecta como el rol que creó las tablas. Sin FORCE, todo este
--- apartado sería decorativo.
+-- apartado sería decorativo.  ← ver la corrección de arriba: NO basta con FORCE.
 
 CREATE POLICY org_isolation ON pliegos
   USING      (organization_id = current_setting('app.org_id', true))   -- filtra LECTURAS

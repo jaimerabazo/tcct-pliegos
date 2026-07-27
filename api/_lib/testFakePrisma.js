@@ -42,6 +42,12 @@ export function createFakePliegoPrisma(
     async $executeRaw() {
       return 1;
     },
+    // withTenant (api/_lib/tenantDb.js) fija rol y organización con SET LOCAL ROLE antes
+    // de cada operación. Aquí no hay Postgres al que fijárselo: basta con no romper. El
+    // aislamiento REAL que produce ese contexto se verifica en tests/integration.
+    async $executeRawUnsafe() {
+      return 1;
+    },
     async $queryRaw(_strings, tokenHash, userId, email) {
       const sql = Array.isArray(_strings) ? _strings.join('?') : String(_strings);
       if (sql.includes('FROM organizations')) {

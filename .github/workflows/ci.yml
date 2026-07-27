@@ -100,6 +100,10 @@ jobs:
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO pliegos_runtime;
           GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO pliegos_runtime;
 
+          -- withTenant() hace SET LOCAL ROLE app_tenant en cada request: el rol con el
+          -- que se conecta debe ser miembro para poder asumirlo.
+          GRANT app_tenant TO pliegos_runtime;
+
           DO $check_role$
           BEGIN
             IF NOT EXISTS (
@@ -111,10 +115,10 @@ jobs:
             IF EXISTS (
               SELECT 1
               FROM pg_roles
-              WHERE rolname = 'pliegos_runtime'
+              WHERE rolname IN ('pliegos_runtime', 'app_tenant')
                 AND (rolsuper OR rolbypassrls)
             ) THEN
-              RAISE EXCEPTION 'El rol de runtime puede saltarse RLS';
+              RAISE EXCEPTION 'Un rol de runtime puede saltarse RLS';
             END IF;
           END;
           $check_role$;

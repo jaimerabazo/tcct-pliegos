@@ -4,6 +4,7 @@ import { presentationRequestSchema, presentationContentSchema } from '../../_lib
 import { buildSlideSpecs, presentationFilename } from '../../_lib/presentationBuilder.js';
 import { renderPptx } from '../../_lib/presentationRenderer.js';
 import { requireMember } from '../../_lib/authz.js';
+import { withTenant } from '../../_lib/tenantDb.js';
 import { recordUsage } from '../../_lib/usage.js';
 
 // Generación más rápida que /api/analyze (no sube un PDF, solo sintetiza un resumen
@@ -167,14 +168,14 @@ export default async function handler(req, res, client = prisma) {
 
     // Metering: una fila por operación LLM (no lanza nunca — la presentación no debe
     // fallar porque el metering falle).
-    await recordUsage(client, {
+    await withTenant(client, ctx.orgId, (db) => recordUsage(db, {
       organizationId: ctx.orgId,
       userId: ctx.user.id,
       type: 'presentation',
       model: MODEL,
       usage: response.usage,
       pliegoId: pliego.id,
-    });
+    }));
 
     const { tagline, resumenFinal } = check.data;
     const specs = buildSlideSpecs({ pliego, analysisData: pliego.analysisData, tagline, resumenFinal });

@@ -28,43 +28,46 @@ const ID_PREFIX = 'it-';
 export const testId = (label) => `${ID_PREFIX}${label}-${randomUUID()}`;
 
 // Una organización con sus miembros y pliegos. Ids explícitos (no generados por la BD)
-// para poder afirmar sobre ellos y limpiarlos sin releer.
+// para poder afirmar sobre ellos y limpiarlos sin releer. La transacción evita dejar una
+// organización parcial si falla la creación de cualquier membership o pliego.
 export async function createOrgFixture(prisma, { label, members = [], pliegos = [] }) {
   const organizationId = testId(label);
-  await prisma.organization.create({
-    data: {
-      id: organizationId,
-      name: `Org ${label}`,
-      slug: organizationId, // el slug es @unique: reutilizar el id evita colisiones
-    },
-  });
-
-  for (const member of members) {
-    await prisma.membership.create({
-      data: { userId: member.userId, organizationId, role: member.role ?? 'member' },
-    });
-  }
-
-  const createdPliegos = [];
-  for (const [index, pliego] of pliegos.entries()) {
-    createdPliegos.push(await prisma.pliego.create({
+  return prisma.$transaction(async (tx) => {
+    await tx.organization.create({
       data: {
-        organizationId,
-        expediente: pliego.expediente ?? `2026/${label}-${index}`,
-        titulo: pliego.titulo ?? `Pliego ${label} ${index}`,
-        organismo: pliego.organismo ?? 'Organismo de prueba',
-        importe: pliego.importe ?? 1000000,
-        lotes: pliego.lotes ?? 1,
-        estado: pliego.estado ?? 'analizado',
-        procedimiento: pliego.procedimiento ?? 'Abierto',
-        ens: pliego.ens ?? 'Alto',
-        analysisData: pliego.analysisData ?? null,
-        createdBy: pliego.createdBy ?? members[0]?.userId ?? null,
+        id: organizationId,
+        name: `Org ${label}`,
+        slug: organizationId, // el slug es @unique: reutilizar el id evita colisiones
       },
-    }));
-  }
+    });
 
-  return { organizationId, pliegos: createdPliegos };
+    for (const member of members) {
+      await tx.membership.create({
+        data: { userId: member.userId, organizationId, role: member.role ?? 'member' },
+      });
+    }
+
+    const createdPliegos = [];
+    for (const [index, pliego] of pliegos.entries()) {
+      createdPliegos.push(await tx.pliego.create({
+        data: {
+          organizationId,
+          expediente: pliego.expediente ?? `2026/${label}-${index}`,
+          titulo: pliego.titulo ?? `Pliego ${label} ${index}`,
+          organismo: pliego.organismo ?? 'Organismo de prueba',
+          importe: pliego.importe ?? 1000000,
+          lotes: pliego.lotes ?? 1,
+          estado: pliego.estado ?? 'analizado',
+          procedimiento: pliego.procedimiento ?? 'Abierto',
+          ens: pliego.ens ?? 'Alto',
+          analysisData: pliego.analysisData ?? null,
+          createdBy: pliego.createdBy ?? members[0]?.userId ?? null,
+        },
+      }));
+    }
+
+    return { organizationId, pliegos: createdPliegos };
+  });
 }
 
 // Borra las organizaciones creadas por la suite. La cascada del schema hace el resto:

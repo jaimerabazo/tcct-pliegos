@@ -280,6 +280,25 @@ describe('escritura principal de /api/analyze (Postgres real)', () => {
 });
 
 describe('integridad del modelo (lo que un doble en memoria no puede verificar)', () => {
+  it('si createOrgFixture falla a mitad, revierte también la organización', async () => {
+    const label = testId('rollback-fixture');
+    const duplicatedUserId = testId('duplicated-member');
+
+    await expect(createOrgFixture(prisma, {
+      label,
+      // La segunda membership viola la PK compuesta y fuerza un fallo después de
+      // haber intentado crear la organización y la primera membership.
+      members: [
+        { userId: duplicatedUserId, role: 'owner' },
+        { userId: duplicatedUserId, role: 'member' },
+      ],
+    })).rejects.toMatchObject({ code: 'P2002' });
+
+    expect(await prisma.organization.findFirst({
+      where: { name: `Org ${label}` },
+    })).toBeNull();
+  });
+
   it('el mismo expediente puede existir en dos organizaciones distintas', async () => {
     const expediente = `2026/COMPARTIDO-${Date.now()}`;
     const enA = await prisma.pliego.create({

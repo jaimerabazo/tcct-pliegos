@@ -15,6 +15,28 @@
 // interpolarlo, así que mantenerlo como literal cerrado es lo que lo hace seguro.
 export const APP_TENANT_ROLE = 'app_tenant';
 
+// Gate de despliegue expand/contract: durante unos minutos puede estar vivo el código
+// nuevo mientras la migración que crea app_tenant sigue esperando aprobación. Se exige
+// que estén las cinco políticas creadas por esa migración para no confundir un CREATE
+// ROLE parcial con un rollout terminado. Una vez listas, SET ROLE es obligatorio: no se
+// ocultan memberships o permisos mal configurados. Tampoco se captura ningún error real.
+async function canAssumeTenantRole(tx) {
+  const [capability] = await tx.$queryRaw`
+    SELECT to_regrole(${APP_TENANT_ROLE}) IS NOT NULL
+      AND (
+        SELECT count(*)
+        FROM pg_policies
+        WHERE schemaname = 'public'
+          AND (
+            (tablename = 'Pliego' AND policyname = 'tenant_isolation')
+            OR (tablename IN ('usage_events', 'audit_log')
+              AND policyname IN ('tenant_select', 'tenant_insert'))
+          )
+      ) = 5 AS "canSetRole"
+  `;
+  return capability?.canSetRole === true;
+}
+
 // Ejecuta `callback` con un cliente Prisma restringido a `organizationId`.
 //
 //   const pliegos = await withTenant(prisma, ctx.orgId, (db) => listPliegos(db, ctx.orgId));
@@ -29,12 +51,14 @@ export async function withTenant(client, organizationId, callback) {
   }
 
   // El doble en memoria de los tests unitarios implementa $transaction/$executeRaw* como
-  // no-ops, así que este mismo camino sirve con y sin Postgres detrás — sin ramas
-  // especiales que dejarían el código de producción sin ejercitar. El aislamiento real
-  // que producen estas dos sentencias se verifica en tests/integration.
+  // no-ops, así que este mismo camino sirve con y sin Postgres detrás. app.org_id se fija
+  // SIEMPRE: si la migración está a medias y RLS ya aplica por membership, las políticas
+  // siguen teniendo contexto. SET ROLE solo se activa cuando la BD confirma que es seguro.
   return client.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(`SET LOCAL ROLE ${APP_TENANT_ROLE}`);
     await tx.$executeRaw`SELECT set_config('app.org_id', ${organizationId}, true)`;
+    if (await canAssumeTenantRole(tx)) {
+      await tx.$executeRawUnsafe(`SET LOCAL ROLE ${APP_TENANT_ROLE}`);
+    }
     return callback(tx);
   });
 }

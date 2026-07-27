@@ -50,6 +50,10 @@ export function createFakePliegoPrisma(
     },
     async $queryRaw(_strings, tokenHash, userId, email) {
       const sql = Array.isArray(_strings) ? _strings.join('?') : String(_strings);
+      if (sql.includes('to_regrole')) {
+        // La mayoría de unit tests modelan el estado estable, con la migración RLS lista.
+        return [{ canSetRole: true }];
+      }
       if (sql.includes('FROM organizations')) {
         return [];
       }

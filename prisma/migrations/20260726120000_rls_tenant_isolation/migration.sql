@@ -56,7 +56,17 @@ END;
 $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 2. Políticas de aislamiento
+-- 2. Contrato final de tenancy
+-- ─────────────────────────────────────────────────────────────────────────────
+-- El backfill 20260722123000 ya aborta si queda alguna fila sin organización. Cerramos
+-- ahora la fase expand: incluso el propietario de la tabla, un import o un backfill que
+-- no pase por RLS tiene prohibido crear pliegos huérfanos. Esto también hace efectiva la
+-- unicidad compuesta para todas las filas (Postgres permite varios NULL en un UNIQUE).
+
+ALTER TABLE "Pliego" ALTER COLUMN "organizationId" SET NOT NULL;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 3. Políticas de aislamiento
 -- ─────────────────────────────────────────────────────────────────────────────
 -- USING filtra lo que se puede LEER/tocar; WITH CHECK valida lo que queda tras un
 -- INSERT/UPDATE. Sin WITH CHECK se podrían crear filas en la organización de otro.
@@ -73,7 +83,7 @@ CREATE POLICY tenant_isolation ON "Pliego"
     WITH CHECK ("organizationId" = current_setting('app.org_id', true));
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 3. Metering y auditoría: aislamiento + APPEND-ONLY
+-- 4. Metering y auditoría: aislamiento + APPEND-ONLY
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Solo se declaran políticas para SELECT e INSERT. Con RLS activo, toda operación sin
 -- política que la ampare queda denegada, así que UPDATE y DELETE son imposibles para el
@@ -97,7 +107,7 @@ CREATE POLICY tenant_insert ON "audit_log"
     WITH CHECK ("organizationId" = current_setting('app.org_id', true));
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 4. Verificación: que la migración falle aquí si el blindaje no quedó puesto
+-- 5. Verificación: que la migración falle aquí si el blindaje no quedó puesto
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Una migración de seguridad que "pasa" sin aplicar la seguridad es peor que no tenerla:
 -- da una falsa sensación de protección. Estas comprobaciones la hacen fallar en voz alta.
@@ -107,6 +117,17 @@ DECLARE
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_tenant' AND (rolbypassrls OR rolsuper)) THEN
         RAISE EXCEPTION 'app_tenant puede saltarse RLS: el aislamiento no sería real.';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_attribute
+        WHERE attrelid = 'public."Pliego"'::regclass
+          AND attname = 'organizationId'
+          AND attnotnull
+          AND NOT attisdropped
+    ) THEN
+        RAISE EXCEPTION 'Pliego.organizationId sigue aceptando NULL.';
     END IF;
 
     FOREACH tabla IN ARRAY ARRAY['Pliego', 'usage_events', 'audit_log'] LOOP

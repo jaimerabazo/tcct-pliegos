@@ -39,6 +39,18 @@ afterAll(async () => {
 });
 
 describe('RLS: el motor filtra aunque el código no lo haga', () => {
+  it('organizationId es obligatorio también para escrituras que puedan eludir RLS', async () => {
+    const [column] = await admin.$queryRaw`
+      SELECT is_nullable AS "isNullable"
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'Pliego'
+        AND column_name = 'organizationId'
+    `;
+
+    expect(column?.isNullable).toBe('NO');
+  });
+
   it('una consulta SIN filtro de organización solo devuelve filas del tenant activo', async () => {
     // Esta query es el bug que tememos: alguien escribe findMany() y olvida el where.
     const vistosDesdeA = await withTenant(prisma, orgA.organizationId, (db) => db.pliego.findMany());

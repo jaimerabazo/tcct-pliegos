@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { APP_TENANT_ROLE, withTenant } from './tenantDb.js';
+import { APP_TENANT_ROLE, withTenant, withUser } from './tenantDb.js';
 
 function tenantClient(canSetRole) {
   const client = {
@@ -37,6 +37,24 @@ describe('withTenant — despliegue compatible de RLS', () => {
 
     await expect(withTenant(client, null, async () => 'resultado'))
       .rejects.toThrow(/organizationId/);
+    expect(client.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('crea un contexto de usuario para el bootstrap sin declarar una organización', async () => {
+    const client = tenantClient(true);
+    const callback = vi.fn(async () => 'organizaciones');
+
+    await expect(withUser(client, 'user-a', callback)).resolves.toBe('organizaciones');
+
+    expect(client.$executeRaw).toHaveBeenCalledOnce();
+    expect(client.$executeRawUnsafe).toHaveBeenCalledWith(`SET LOCAL ROLE ${APP_TENANT_ROLE}`);
+    expect(callback).toHaveBeenCalledWith(client);
+  });
+
+  it('withUser falla cerrado sin una identidad verificada', async () => {
+    const client = tenantClient(true);
+
+    await expect(withUser(client, null, async () => 'resultado')).rejects.toThrow(/userId/);
     expect(client.$transaction).not.toHaveBeenCalled();
   });
 });

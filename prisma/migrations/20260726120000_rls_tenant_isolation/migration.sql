@@ -83,7 +83,38 @@ CREATE POLICY tenant_isolation ON "Pliego"
     WITH CHECK ("organizationId" = current_setting('app.org_id', true));
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 4. Metering y auditoría: aislamiento + APPEND-ONLY
+-- 4. Miembros e invitaciones
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Las operaciones posteriores a requireMember usan app.org_id, igual que Pliego.
+-- memberships necesita además una excepción SELECT muy estrecha para el bootstrap:
+-- antes de elegir una organización, el usuario solo puede leer SUS propias memberships.
+-- Esa excepción nunca permite INSERT/UPDATE/DELETE.
+
+ALTER TABLE "memberships" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON "memberships"
+    FOR ALL
+    TO app_tenant
+    USING ("organizationId" = current_setting('app.org_id', true))
+    WITH CHECK ("organizationId" = current_setting('app.org_id', true));
+CREATE POLICY user_memberships_select ON "memberships"
+    FOR SELECT
+    TO app_tenant
+    USING ("userId" = current_setting('app.user_id', true));
+
+ALTER TABLE "invitations" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON "invitations"
+    FOR ALL
+    TO app_tenant
+    USING ("organizationId" = current_setting('app.org_id', true))
+    WITH CHECK ("organizationId" = current_setting('app.org_id', true));
+
+-- Excepción deliberada: quien acepta todavía no pertenece al tenant. La función valida
+-- token+email y, al ser SECURITY DEFINER, es la única vía de runtime que puede atravesar
+-- ambas políticas para crear la membership y marcar la invitación como aceptada.
+GRANT EXECUTE ON FUNCTION public.accept_organization_invitation(TEXT, TEXT, TEXT) TO app_tenant;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 5. Metering y auditoría: aislamiento + APPEND-ONLY
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Solo se declaran políticas para SELECT e INSERT. Con RLS activo, toda operación sin
 -- política que la ampare queda denegada, así que UPDATE y DELETE son imposibles para el
@@ -107,7 +138,7 @@ CREATE POLICY tenant_insert ON "audit_log"
     WITH CHECK ("organizationId" = current_setting('app.org_id', true));
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 5. Verificación: que la migración falle aquí si el blindaje no quedó puesto
+-- 6. Verificación: que la migración falle aquí si el blindaje no quedó puesto
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Una migración de seguridad que "pasa" sin aplicar la seguridad es peor que no tenerla:
 -- da una falsa sensación de protección. Estas comprobaciones la hacen fallar en voz alta.
@@ -130,7 +161,7 @@ BEGIN
         RAISE EXCEPTION 'Pliego.organizationId sigue aceptando NULL.';
     END IF;
 
-    FOREACH tabla IN ARRAY ARRAY['Pliego', 'usage_events', 'audit_log'] LOOP
+    FOREACH tabla IN ARRAY ARRAY['Pliego', 'memberships', 'invitations', 'usage_events', 'audit_log'] LOOP
         IF NOT EXISTS (
             SELECT 1 FROM pg_class
             WHERE oid = format('public.%I', tabla)::regclass AND relrowsecurity

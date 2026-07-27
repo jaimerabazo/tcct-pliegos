@@ -17,7 +17,7 @@ export const APP_TENANT_ROLE = 'app_tenant';
 
 // Gate de despliegue expand/contract: durante unos minutos puede estar vivo el código
 // nuevo mientras la migración que crea app_tenant sigue esperando aprobación. Se exige
-// que estén las cinco políticas creadas por esa migración para no confundir un CREATE
+// que estén las ocho políticas creadas por esa migración para no confundir un CREATE
 // ROLE parcial con un rollout terminado. Una vez listas, SET ROLE es obligatorio: no se
 // ocultan memberships o permisos mal configurados. Tampoco se captura ningún error real.
 async function canAssumeTenantRole(tx) {
@@ -29,10 +29,13 @@ async function canAssumeTenantRole(tx) {
         WHERE schemaname = 'public'
           AND (
             (tablename = 'Pliego' AND policyname = 'tenant_isolation')
+            OR (tablename = 'memberships'
+              AND policyname IN ('tenant_isolation', 'user_memberships_select'))
+            OR (tablename = 'invitations' AND policyname = 'tenant_isolation')
             OR (tablename IN ('usage_events', 'audit_log')
               AND policyname IN ('tenant_select', 'tenant_insert'))
           )
-      ) = 5 AS "canSetRole"
+      ) = 8 AS "canSetRole"
   `;
   return capability?.canSetRole === true;
 }
@@ -56,6 +59,21 @@ export async function withTenant(client, organizationId, callback) {
   // siguen teniendo contexto. SET ROLE solo se activa cuando la BD confirma que es seguro.
   return client.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.org_id', ${organizationId}, true)`;
+    if (await canAssumeTenantRole(tx)) {
+      await tx.$executeRawUnsafe(`SET LOCAL ROLE ${APP_TENANT_ROLE}`);
+    }
+    return callback(tx);
+  });
+}
+
+// Contexto de bootstrap: permite verificar/listar SOLO las memberships del usuario antes
+// de que exista una organización activa. No fija app.org_id, por lo que no abre acceso a
+// los demás miembros ni a invitaciones. El userId procede siempre del JWT ya verificado.
+export async function withUser(client, userId, callback) {
+  if (!userId) throw new Error('withUser requiere un userId.');
+
+  return client.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.user_id', ${userId}, true)`;
     if (await canAssumeTenantRole(tx)) {
       await tx.$executeRawUnsafe(`SET LOCAL ROLE ${APP_TENANT_ROLE}`);
     }

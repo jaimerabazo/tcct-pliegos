@@ -60,7 +60,9 @@ describe('handler POST /api/pliegos/[id]/presentation — auth', () => {
 
     expect(res.statusCode).toBe(404);
     expect(res.body.error).toMatch(/no encontrado/i);
-    expect(transaction).toHaveBeenCalledOnce();
+    // Una transacción verifica la membership por app.user_id y otra carga el pliego
+    // con app.org_id; ambas deben quedar bajo sus respectivas políticas RLS.
+    expect(transaction).toHaveBeenCalledTimes(2);
   });
 
   it('responde 500 JSON si falla la comprobación scoped', async () => {

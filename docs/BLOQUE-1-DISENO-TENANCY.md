@@ -278,9 +278,11 @@ const orgScopedPrisma = (orgId) => prisma.$extends({
 ```
 
 **Excepciones al RLS** (documentadas, no accidentales): las migraciones (rol admin,
-fuera del runtime) y el flujo de aceptar invitación (necesita leer la invitación ANTES
-de tener membership — se hace con una función SQL `SECURITY DEFINER` o un guard propio,
-se decide en Bloque 3).
+fuera del runtime); el bootstrap de organizaciones (una política `SELECT` permite leer
+solo las memberships cuyo `userId` coincide con `app.user_id`); y el flujo de aceptar
+invitación (necesita leerla ANTES de tener membership y pasa exclusivamente por
+`accept_organization_invitation`, una función SQL `SECURITY DEFINER` que valida token,
+email, caducidad y organización activa de forma atómica).
 
 ---
 

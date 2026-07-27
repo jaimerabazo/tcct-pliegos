@@ -93,7 +93,7 @@ nuevo, o viceversa. La disciplina que lo hace seguro:
 se parte en fases compatibles:
 
 El cambio de RLS sigue la misma regla: `withTenant` fija siempre `app.org_id`, pero solo
-asume `app_tenant` cuando la base confirma que el rol y sus cinco políticas ya existen.
+asume `app_tenant` cuando la base confirma que el rol y sus ocho políticas ya existen.
 Así el código nuevo es compatible mientras la migración espera la aprobación de
 producción; al completarse, RLS se activa automáticamente en la siguiente petición, sin
 depender del orden entre Vercel y GitHub Actions. Desde ese momento `SET ROLE` es

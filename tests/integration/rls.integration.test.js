@@ -7,7 +7,8 @@
 //
 // Es la diferencia entre "confío en no tener bugs" y "aunque tenga un bug, no hay fuga".
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { withTenant, APP_TENANT_ROLE } from '../../api/_lib/tenantDb.js';
+import { withTenant, withUser, APP_TENANT_ROLE } from '../../api/_lib/tenantDb.js';
+import { acceptInvitation, hashInvitationToken } from '../../api/_lib/organizations.js';
 import { createAdminPrisma, createOrgFixture, createTestPrisma, cleanupOrgs } from './helpers/testDb.js';
 
 // `prisma` = cliente de runtime, sujeto a RLS (es el que ejecuta los "ataques").
@@ -140,6 +141,94 @@ describe('RLS: el motor filtra aunque el código no lo haga', () => {
     // que conserve la organización anterior, porque "" tampoco casa con ningún tenant.
     expect(estado.org ?? '').toBe('');
     expect(estado.org).not.toBe(orgA.organizationId);
+  });
+});
+
+describe('RLS: memberships e invitations', () => {
+  it('el bootstrap de usuario solo ve sus propias memberships', async () => {
+    const propias = await withUser(prisma, 'rls-user-a', (db) => db.membership.findMany());
+
+    expect(propias).toEqual([
+      expect.objectContaining({ userId: 'rls-user-a', organizationId: orgA.organizationId }),
+    ]);
+  });
+
+  it('un tenant no puede leer ni modificar memberships de otro', async () => {
+    const desdeA = await withTenant(prisma, orgA.organizationId, (db) => db.membership.findMany());
+    expect(desdeA.every((membership) => membership.organizationId === orgA.organizationId)).toBe(true);
+
+    const borrado = await withTenant(prisma, orgA.organizationId, (db) => db.membership.deleteMany({
+      where: { organizationId: orgB.organizationId },
+    }));
+    expect(borrado.count).toBe(0);
+    expect(await admin.membership.findUnique({
+      where: {
+        userId_organizationId: {
+          userId: 'rls-user-b',
+          organizationId: orgB.organizationId,
+        },
+      },
+    })).not.toBeNull();
+  });
+
+  it('un tenant no puede leer ni modificar invitaciones de otro', async () => {
+    const invitationA = await withTenant(prisma, orgA.organizationId, (db) => db.invitation.create({
+      data: {
+        organizationId: orgA.organizationId,
+        email: 'rls-invite-a@example.com',
+        role: 'member',
+        tokenHash: hashInvitationToken('rls-token-a'),
+        expiresAt: new Date(Date.now() + 60_000),
+        createdBy: 'rls-user-a',
+      },
+    }));
+    const invitationB = await withTenant(prisma, orgB.organizationId, (db) => db.invitation.create({
+      data: {
+        organizationId: orgB.organizationId,
+        email: 'rls-invite-b@example.com',
+        role: 'member',
+        tokenHash: hashInvitationToken('rls-token-b'),
+        expiresAt: new Date(Date.now() + 60_000),
+        createdBy: 'rls-user-b',
+      },
+    }));
+
+    const desdeA = await withTenant(prisma, orgA.organizationId, (db) => db.invitation.findMany());
+    expect(desdeA.map((invitation) => invitation.id)).toContain(invitationA.id);
+    expect(desdeA.map((invitation) => invitation.id)).not.toContain(invitationB.id);
+
+    const alteradas = await withTenant(prisma, orgA.organizationId, (db) => db.invitation.updateMany({
+      where: { id: invitationB.id },
+      data: { email: 'robada@example.com' },
+    }));
+    expect(alteradas.count).toBe(0);
+    expect(await admin.invitation.findUnique({ where: { id: invitationB.id } }))
+      .toMatchObject({ email: 'rls-invite-b@example.com' });
+  });
+
+  it('aceptar por token sigue funcionando únicamente mediante SECURITY DEFINER', async () => {
+    const token = `rls-accept-token-${Date.now()}`;
+    const userId = `rls-invited-${Date.now()}`;
+    await admin.invitation.create({
+      data: {
+        organizationId: orgA.organizationId,
+        email: 'rls-accepted@example.com',
+        role: 'member',
+        tokenHash: hashInvitationToken(token),
+        expiresAt: new Date(Date.now() + 60_000),
+        createdBy: 'rls-user-a',
+      },
+    });
+
+    await expect(acceptInvitation(prisma, {
+      token,
+      userId,
+      email: 'rls-accepted@example.com',
+    })).resolves.toMatchObject({ organizationId: orgA.organizationId, role: 'member' });
+
+    expect(await admin.membership.findUnique({
+      where: { userId_organizationId: { userId, organizationId: orgA.organizationId } },
+    })).not.toBeNull();
   });
 });
 

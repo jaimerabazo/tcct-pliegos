@@ -2,6 +2,7 @@ import { prisma } from '../_lib/prisma.js';
 import { requireUser } from '../_lib/auth.js';
 import { organizationCreateSchema } from '../_lib/schemas.js';
 import { createOrganization } from '../_lib/organizations.js';
+import { withUser } from '../_lib/tenantDb.js';
 
 // GET /api/orgs — las organizaciones del usuario autenticado (con su rol en cada una).
 //
@@ -10,10 +11,10 @@ import { createOrganization } from '../_lib/organizations.js';
 // contexto (el huevo y la gallina: este endpoint es quien le dice al cliente qué orgs
 // puede afirmar en X-Organization-Id).
 export async function listMyOrgs(client, userId) {
-  const memberships = await client.membership.findMany({
+  const memberships = await withUser(client, userId, (db) => db.membership.findMany({
     where: { userId },
     include: { organization: true },
-  });
+  }));
   return memberships
     // Una org en ventana de purga (soft-delete, D3) no se ofrece como activable.
     .filter((m) => m.organization && !m.organization.deletedAt)

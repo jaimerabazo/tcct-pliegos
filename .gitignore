@@ -13,6 +13,11 @@ coverage
 
 /src/generated/prisma
 .vercel
+
+# Caché de graphify: artefactos regenerables (AST + análisis semántico por fichero).
+# El grafo en sí (GRAPH_REPORT.md, graph.json, graph.html) sí se versiona.
+graphify-out/cache/
+
 .env*
 # La plantilla SÍ se versiona (no lleva secretos); la negación debe ir DESPUÉS del glob
 !.env.example

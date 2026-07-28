@@ -14,6 +14,10 @@ const noLoginMigrationUrl = new URL(
   './migrations/20260728140000_reject_login_app_tenant/migration.sql',
   import.meta.url,
 );
+const organizationWritesMigrationUrl = new URL(
+  './migrations/20260728150000_restrict_organization_writes/migration.sql',
+  import.meta.url,
+);
 
 function sqlWithoutComments(url) {
   return readFileSync(url, 'utf8').replace(/--.*$/gm, '').trim();
@@ -45,5 +49,17 @@ describe('migración de contrato RLS', () => {
     expect(sql).toMatch(/COMMIT;$/);
     expect(sql).toContain('rolcanlogin');
     expect(sql).toContain('RAISE EXCEPTION');
+  });
+
+  it('retira únicamente las escrituras innecesarias sobre organizations', () => {
+    const sql = sqlWithoutComments(organizationWritesMigrationUrl);
+
+    expect(sql).toMatch(/^BEGIN;/);
+    expect(sql).toMatch(/COMMIT;$/);
+    expect(sql).toMatch(/REVOKE UPDATE, DELETE ON TABLE public\.organizations FROM app_tenant/);
+    expect(sql).toContain("has_table_privilege('app_tenant', 'public.organizations', 'UPDATE')");
+    expect(sql).toContain("has_table_privilege('app_tenant', 'public.organizations', 'DELETE')");
+    expect(sql).toContain("has_table_privilege('app_tenant', 'public.organizations', 'SELECT')");
+    expect(sql).toContain("has_table_privilege('app_tenant', 'public.organizations', 'INSERT')");
   });
 });

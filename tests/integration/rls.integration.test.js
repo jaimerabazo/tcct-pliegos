@@ -66,6 +66,25 @@ describe('RLS: el motor filtra aunque el código no lo haga', () => {
     expect(inseguras).toEqual([]);
   });
 
+  it('app_tenant no puede actualizar ni eliminar organizaciones', async () => {
+    const original = await admin.organization.findUniqueOrThrow({
+      where: { id: orgB.organizationId },
+    });
+
+    await expect(withTenant(prisma, orgA.organizationId, (db) => db.organization.updateMany({
+      where: { id: orgB.organizationId },
+      data: { deletedAt: new Date() },
+    }))).rejects.toThrow();
+
+    await expect(withTenant(prisma, orgA.organizationId, (db) => db.organization.deleteMany({
+      where: { id: orgB.organizationId },
+    }))).rejects.toThrow();
+
+    await expect(admin.organization.findUnique({
+      where: { id: orgB.organizationId },
+    })).resolves.toEqual(original);
+  });
+
   it('organizationId es obligatorio también para escrituras que puedan eludir RLS', async () => {
     const [column] = await admin.$queryRaw`
       SELECT is_nullable AS "isNullable"

@@ -22,6 +22,12 @@
 -- No se usa FORCE a propósito: el propietario (`postgres`) sigue necesitando operar sin
 -- restricción en migraciones y backfills. La protección de runtime la da el cambio de rol.
 
+-- Prisma Migrate no envuelve automáticamente los archivos SQL de PostgreSQL. Esta
+-- migración publica además la señal que consulta canAssumeTenantRole (rol + políticas),
+-- así que debe ser todo-o-nada: si falla cualquier verificación final, no puede quedar
+-- visible ninguna parte de esa señal ni ningún grant o cambio de esquema intermedio.
+BEGIN;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. Rol de runtime
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -171,3 +177,5 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+COMMIT;

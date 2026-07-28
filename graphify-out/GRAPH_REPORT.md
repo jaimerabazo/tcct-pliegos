@@ -1,13 +1,18 @@
-# Graph Report - .  (2026-07-28)
+# Graph Report - tcct-pliegos  (2026-07-28)
 
 ## Corpus Check
-- 113 files · ~70,137 words
+- 111 files · ~71,947 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 540 nodes · 1188 edges · 37 communities (23 shown, 14 thin omitted)
+- 547 nodes · 1208 edges · 37 communities (23 shown, 14 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 22 edges (avg confidence: 0.7)
-- Token cost: 0 input · 110,125 output
+- Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `cfa285dd`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - Multi-Tenant Auth API & Isolation Tests
@@ -77,19 +82,19 @@
 
 ### Community 0 - "Multi-Tenant Auth API & Isolation Tests"
 Cohesion: 0.08
-Nodes (52): handler(), authConfigured(), encoder, getRemoteJwks(), getUserFromRequest(), requireUser(), supabaseBaseUrl(), verificationKey() (+44 more)
+Nodes (52): requireMember(), acceptInvitation(), availableSlug(), createInvitation(), createOrganization(), hashInvitationToken(), listMembers(), listPendingInvitations() (+44 more)
 
 ### Community 1 - "Org Onboarding & App Shell (Frontend)"
-Cohesion: 0.10
-Nodes (32): apiFetch(), getActiveOrgId(), jsonOrThrow(), setActiveOrgId(), acceptInvitation(), createInvitation(), createOrganization(), listMembers() (+24 more)
+Cohesion: 0.18
+Nodes (19): apiFetch(), getActiveOrgId(), jsonOrThrow(), setActiveOrgId(), acceptInvitation(), createInvitation(), createOrganization(), listMembers() (+11 more)
 
 ### Community 2 - "Pliego Analysis & Dashboard UI"
-Cohesion: 0.08
-Nodes (38): FieldLabel(), fieldStyle, NumberField(), SelectField(), TextAreaField(), TextField(), ConfidenceBadge(), EditButton() (+30 more)
+Cohesion: 0.06
+Nodes (51): analyzePdf(), downloadBlob(), filenameFromDisposition(), generatePresentation(), listPliegos(), normalizePliego(), toShortDate(), updateAnalysis() (+43 more)
 
 ### Community 3 - "API Test Suites (Auth/Usage/Tenancy)"
 Cohesion: 0.07
-Nodes (37): fakeClient(), ORG, ORG_BORRADA, reqFor(), authHeaders(), encoder, signTestToken(), TEST_USER (+29 more)
+Nodes (45): handler(), authConfigured(), encoder, getRemoteJwks(), getUserFromRequest(), requireUser(), supabaseBaseUrl(), verificationKey() (+37 more)
 
 ### Community 4 - "Production Dependencies (package.json)"
 Cohesion: 0.05
@@ -97,7 +102,7 @@ Nodes (43): @anthropic-ai/sdk, jose, lucide-react, dependencies, @anthropic-ai/s
 
 ### Community 5 - "Analysis Ingestion & Zod Schemas"
 Cohesion: 0.09
-Nodes (35): config, getAnthropicResult(), getClientErrorMessage(), handler(), persistAnalysis(), PLIEGO_ANALYSIS_SCHEMA, readRequestBody(), CTX_A (+27 more)
+Nodes (33): config, getAnthropicResult(), getClientErrorMessage(), handler(), persistAnalysis(), PLIEGO_ANALYSIS_SCHEMA, readRequestBody(), CTX_A (+25 more)
 
 ### Community 6 - "PPTX Renderer & Pagination"
 Cohesion: 0.13
@@ -120,8 +125,8 @@ Cohesion: 0.21
 Nodes (10): AuthGate(), useSession(), authHeader(), getAccessToken(), signInWithMagicLink(), signOut(), supabaseConfigured, queryClient (+2 more)
 
 ### Community 11 - "Supabase Admin Invitations"
-Cohesion: 0.36
-Nodes (6): adminConfig(), authInviteError(), EXISTING_USER_ERROR_CODES, getSupabaseAdmin(), getUserEmails(), inviteUserByEmail()
+Cohesion: 0.23
+Nodes (7): healthyRlsPolicies(), rlsPolicy(), estimateCost(), PRICE_USD_PER_MTOK, recordUsage(), recordUsageBestEffort(), $queryRaw()
 
 ### Community 12 - "Prisma Migration Tests"
 Cohesion: 0.29
@@ -140,7 +145,7 @@ Cohesion: 0.67
 Nodes (3): Supabase magic-link auth + requireUser JWT guard (already built), AuthN/AuthZ: Supabase magic link + owner/member roles, requireMember middleware (user + membership + role check)
 
 ## Knowledge Gaps
-- **126 isolated node(s):** `encoder`, `ORG`, `ORG_BORRADA`, `SECTION_LABELS`, `SECTION_BUILDERS` (+121 more)
+- **127 isolated node(s):** `RLS_PROTECTED_TABLES`, `prisma`, `admin`, `encoder`, `ORG` (+122 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **14 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -148,16 +153,16 @@ Nodes (3): Supabase magic-link auth + requireUser JWT guard (already built), Aut
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `main()` connect `Analysis Ingestion & Zod Schemas` to `Production Dependencies (package.json)`?**
-  _High betweenness centrality (0.196) - this node is a cross-community bridge._
-- **Why does `@prisma/client` connect `Production Dependencies (package.json)` to `Analysis Ingestion & Zod Schemas`?**
   _High betweenness centrality (0.194) - this node is a cross-community bridge._
-- **What connects `encoder`, `ORG`, `ORG_BORRADA` to the rest of the system?**
-  _126 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `@prisma/client` connect `Production Dependencies (package.json)` to `Analysis Ingestion & Zod Schemas`?**
+  _High betweenness centrality (0.193) - this node is a cross-community bridge._
+- **What connects `RLS_PROTECTED_TABLES`, `prisma`, `admin` to the rest of the system?**
+  _127 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Multi-Tenant Auth API & Isolation Tests` be split into smaller, more focused modules?**
-  _Cohesion score 0.07848944835246205 - nodes in this community are weakly interconnected._
-- **Should `Org Onboarding & App Shell (Frontend)` be split into smaller, more focused modules?**
-  _Cohesion score 0.1005260081823495 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07525150905432595 - nodes in this community are weakly interconnected._
 - **Should `Pliego Analysis & Dashboard UI` be split into smaller, more focused modules?**
-  _Cohesion score 0.07894736842105263 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06049382716049383 - nodes in this community are weakly interconnected._
 - **Should `API Test Suites (Auth/Usage/Tenancy)` be split into smaller, more focused modules?**
-  _Cohesion score 0.07205387205387205 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06830601092896176 - nodes in this community are weakly interconnected._
+- **Should `Production Dependencies (package.json)` be split into smaller, more focused modules?**
+  _Cohesion score 0.045454545454545456 - nodes in this community are weakly interconnected._

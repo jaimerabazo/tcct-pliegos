@@ -16,6 +16,69 @@
 export const APP_TENANT_ROLE = 'app_tenant';
 const TENANT_RLS_CONTRACT_MIGRATION = '20260728120000_complete_tenant_rls_contract';
 
+// Tablas cuyo contenido pertenece a un tenant. `organizations` queda fuera a propósito:
+// requireMember necesita leerla ANTES de que exista organización activa (BLOQUE-1 §4).
+export const RLS_PROTECTED_TABLES = ['Pliego', 'memberships', 'invitations', 'usage_events', 'audit_log'];
+
+// Expresiones que hacen el aislamiento. Se comparan con lo que Postgres devuelve en
+// pg_policies, que es la definición ya normalizada por el motor.
+const ORG_SCOPE = `("organizationId" = current_setting('app.org_id'::text, true))`;
+const USER_SCOPE = `("userId" = current_setting('app.user_id'::text, true))`;
+
+// La huella EXACTA del contrato: qué política, sobre qué tabla, para qué comando y con
+// qué expresión. Contar nombres no basta —un ALTER POLICY ... USING (true) conserva el
+// nombre y desactiva el filtro—, así que se compara el contenido y se rechaza cualquier
+// política que sobre: en Postgres las políticas PERMISSIVE se combinan con OR, de modo
+// que una permissive de más abre el acceso aunque las demás sigan correctas.
+const EXPECTED_POLICIES = [
+  { table: 'Pliego', name: 'tenant_isolation', cmd: 'ALL', qual: ORG_SCOPE, withCheck: ORG_SCOPE },
+  { table: 'memberships', name: 'tenant_isolation', cmd: 'ALL', qual: ORG_SCOPE, withCheck: ORG_SCOPE },
+  { table: 'memberships', name: 'user_memberships_select', cmd: 'SELECT', qual: USER_SCOPE, withCheck: null },
+  { table: 'invitations', name: 'tenant_isolation', cmd: 'ALL', qual: ORG_SCOPE, withCheck: ORG_SCOPE },
+  { table: 'usage_events', name: 'tenant_select', cmd: 'SELECT', qual: ORG_SCOPE, withCheck: null },
+  { table: 'usage_events', name: 'tenant_insert', cmd: 'INSERT', qual: null, withCheck: ORG_SCOPE },
+  { table: 'audit_log', name: 'tenant_select', cmd: 'SELECT', qual: ORG_SCOPE, withCheck: null },
+  { table: 'audit_log', name: 'tenant_insert', cmd: 'INSERT', qual: null, withCheck: ORG_SCOPE },
+];
+
+// Los espacios del deparse de Postgres no son parte del contrato; la expresión sí.
+const canonical = (expression) => (expression == null ? null : String(expression).replace(/\s+/g, ''));
+
+// PURA (testeable sin base de datos): ¿las políticas vivas son EXACTAMENTE las esperadas?
+// Devuelve null si todo cuadra, o el motivo del rechazo — que se registra para que una
+// deriva de RLS se pueda diagnosticar sin adivinar.
+export function findPolicyContractBreach(rows = []) {
+  const actual = rows.map((row) => ({
+    table: row.tablename,
+    name: row.policyname,
+    cmd: row.cmd,
+    permissive: row.permissive,
+    roles: row.roles,
+    qual: canonical(row.qual),
+    withCheck: canonical(row.with_check),
+  }));
+
+  for (const expected of EXPECTED_POLICIES) {
+    const found = actual.find((row) => row.table === expected.table && row.name === expected.name);
+    if (!found) return `falta la política ${expected.table}.${expected.name}`;
+    if (found.cmd !== expected.cmd) return `${expected.table}.${expected.name} aplica a ${found.cmd}, se esperaba ${expected.cmd}`;
+    if (found.qual !== canonical(expected.qual)) return `${expected.table}.${expected.name} tiene un USING distinto del contrato`;
+    if (found.withCheck !== canonical(expected.withCheck)) return `${expected.table}.${expected.name} tiene un WITH CHECK distinto del contrato`;
+    // Una política dirigida a PUBLIC (o a otro rol) no protege lo que creemos.
+    if (!/\bapp_tenant\b/.test(found.roles ?? '')) return `${expected.table}.${expected.name} no está limitada a ${APP_TENANT_ROLE}`;
+  }
+
+  const sobrante = actual.find((row) => !EXPECTED_POLICIES.some(
+    (expected) => expected.table === row.table && expected.name === row.name,
+  ));
+  // Una RESTRICTIVE de más solo puede restringir (se combina con AND): no es una fuga.
+  if (sobrante && sobrante.permissive !== 'RESTRICTIVE') {
+    return `política no prevista ${sobrante.table}.${sobrante.name} (permissive: amplía el acceso)`;
+  }
+
+  return null;
+}
+
 // Gate de despliegue expand/contract: durante unos minutos puede estar vivo el código
 // nuevo mientras la migración que crea app_tenant sigue esperando aprobación. Se exige
 // el historial durable de Prisma para distinguir «la migración aún no llegó» de «llegó
@@ -32,33 +95,28 @@ async function canAssumeTenantRole(tx) {
           AND rolled_back_at IS NULL
       ) AS "contractDeployed",
       to_regrole(${APP_TENANT_ROLE}) IS NOT NULL
-      AND (
-        SELECT count(*)
-        FROM pg_policies
-        WHERE schemaname = 'public'
-          AND (
-            (tablename = 'Pliego' AND policyname = 'tenant_isolation')
-            OR (tablename = 'memberships'
-              AND policyname IN ('tenant_isolation', 'user_memberships_select'))
-            OR (tablename = 'invitations' AND policyname = 'tenant_isolation')
-            OR (tablename IN ('usage_events', 'audit_log')
-              AND policyname IN ('tenant_select', 'tenant_insert'))
-          )
-      ) = 8
-      -- Contar políticas NO basta: ALTER TABLE ... DISABLE ROW LEVEL SECURITY deja las
-      -- filas de pg_policies intactas, así que el recuento seguiría dando 8 mientras la
-      -- tabla queda de par en par. Sin esta comprobación, el gate daría por bueno un
-      -- contrato roto y asumiría app_tenant: una query sin scope leería o modificaría
-      -- las filas de todos los tenants, justo lo contrario de lo que protege este gate.
-      -- El interruptor real es relrowsecurity, y se exige en las cinco tablas.
+      -- El interruptor real del RLS es relrowsecurity: DISABLE ROW LEVEL SECURITY deja
+      -- intactas las filas de pg_policies, así que mirar solo las políticas daría por
+      -- bueno un contrato roto y asumiría app_tenant sobre una tabla abierta de par en par.
       AND (
         SELECT count(*)
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public'
-          AND c.relname IN ('Pliego', 'memberships', 'invitations', 'usage_events', 'audit_log')
+          AND c.relname = ANY(${RLS_PROTECTED_TABLES})
           AND c.relrowsecurity
-      ) = 5 AS "protectionsReady",
+      ) = ${RLS_PROTECTED_TABLES.length} AS "protectionsReady",
+      -- La DEFINICIÓN de cada política viaja entera para validarla en findPolicyContractBreach:
+      -- el nombre y el interruptor pueden estar bien y la expresión haber sido vaciada
+      -- (ALTER POLICY ... USING (true)) o haberse añadido una permissive que amplía el acceso.
+      COALESCE((
+        SELECT json_agg(row_to_json(pol))
+        FROM (
+          SELECT tablename, policyname, permissive, roles::text AS roles, cmd, qual, with_check
+          FROM pg_policies
+          WHERE schemaname = 'public' AND tablename = ANY(${RLS_PROTECTED_TABLES})
+        ) pol
+      ), '[]'::json) AS "policies",
       COALESCE((
         SELECT NOT (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcanlogin)
           AND NOT EXISTS (
@@ -78,7 +136,11 @@ async function canAssumeTenantRole(tx) {
   `;
   if (capability?.contractDeployed !== true) return false;
   if (capability.protectionsReady !== true) {
-    throw new Error('El contrato RLS desplegado está incompleto: falta el rol o alguna política.');
+    throw new Error('El contrato RLS desplegado está incompleto: falta el rol o el RLS de alguna tabla.');
+  }
+  const breach = findPolicyContractBreach(capability.policies ?? []);
+  if (breach) {
+    throw new Error(`El contrato RLS ha derivado: ${breach}.`);
   }
   if (capability.roleSafe !== true) {
     throw new Error('app_tenant no es seguro: puede iniciar sesión, eludir RLS o ejercer ownership.');

@@ -437,4 +437,32 @@ describe('RLS: regresiones del endurecimiento de permisos', () => {
 
     await admin.$executeRawUnsafe(`DROP TABLE IF EXISTS rls_gate_probe`);
   });
+
+  it('el gate se cierra si una política real pierde su expresión o si aparece una permissive de más', async () => {
+    // Ataque 1: la política conserva nombre, comando, rol y RLS activo — pero ya no filtra.
+    await admin.$executeRawUnsafe(
+      `ALTER POLICY tenant_isolation ON "Pliego" USING (true) WITH CHECK (true)`,
+    );
+    await expect(withTenant(prisma, orgA.organizationId, (db) => db.pliego.count()))
+      .rejects.toThrow(/derivado/i);
+
+    // Restaurada: el gate vuelve a abrir (la comprobación no es un cerrojo permanente).
+    await admin.$executeRawUnsafe(
+      `ALTER POLICY tenant_isolation ON "Pliego"
+         USING ("organizationId" = current_setting('app.org_id', true))
+         WITH CHECK ("organizationId" = current_setting('app.org_id', true))`,
+    );
+    await expect(withTenant(prisma, orgA.organizationId, (db) => db.pliego.count())).resolves.toBeGreaterThanOrEqual(0);
+
+    // Ataque 2: las ocho políticas siguen intactas, pero una permissive extra se combina
+    // con OR y abre la tabla entera.
+    await admin.$executeRawUnsafe(
+      `CREATE POLICY colada_test ON "Pliego" FOR SELECT TO app_tenant USING (true)`,
+    );
+    await expect(withTenant(prisma, orgA.organizationId, (db) => db.pliego.count()))
+      .rejects.toThrow(/no prevista/i);
+
+    await admin.$executeRawUnsafe(`DROP POLICY colada_test ON "Pliego"`);
+    await expect(withTenant(prisma, orgA.organizationId, (db) => db.pliego.count())).resolves.toBeGreaterThanOrEqual(0);
+  });
 });

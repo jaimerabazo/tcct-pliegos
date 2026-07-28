@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { estimateCost, recordUsage, recordUsageBestEffort } from './usage.js';
 import { createFakePliegoPrisma } from './testFakePrisma.js';
+import { healthyRlsPolicies } from './testRlsPolicies.js';
 
 describe('estimateCost', () => {
   it('calcula el coste con el precio de lista de claude-sonnet-5 ($3 in / $15 out por MTok)', () => {
@@ -68,7 +69,14 @@ describe('recordUsage', () => {
       async $executeRawUnsafe() {},
       async $executeRaw() {},
       async $queryRaw() {
-        return [{ contractDeployed: true, protectionsReady: true, roleSafe: true }];
+        // El gate de withTenant valida la DEFINICIÓN de las políticas, no solo que
+        // existan: sin esta huella sana fallaría el contrato antes de llegar al metering.
+        return [{
+          contractDeployed: true,
+          protectionsReady: true,
+          roleSafe: true,
+          policies: healthyRlsPolicies(),
+        }];
       },
       usageEvent: { create: () => { throw error; } },
     };

@@ -8,6 +8,8 @@
 // Desde el Bloque 3 el doble también modela el tenancy mínimo que consume
 // requireMember (authz.js): `organizations` (por id) y `memberships` (por PK compuesta
 // userId+organizationId, con `include: { organization }`).
+import { healthyRlsPolicies } from './testRlsPolicies.js';
+
 let counter = 0;
 
 export function createFakePliegoPrisma(
@@ -51,8 +53,15 @@ export function createFakePliegoPrisma(
     async $queryRaw(_strings, tokenHash, userId, email) {
       const sql = Array.isArray(_strings) ? _strings.join('?') : String(_strings);
       if (sql.includes('to_regrole')) {
-        // La mayoría de unit tests modelan el estado estable, con la migración RLS lista.
-        return [{ contractDeployed: true, protectionsReady: true, roleSafe: true }];
+        // La mayoría de unit tests modelan el estado estable, con la migración RLS lista
+        // y las políticas intactas (el gate de tenantDb.js valida su definición, no solo
+        // que existan, así que hay que devolverlas con su forma real).
+        return [{
+          contractDeployed: true,
+          protectionsReady: true,
+          roleSafe: true,
+          policies: healthyRlsPolicies(),
+        }];
       }
       if (sql.includes('FROM organizations')) {
         return [];

@@ -1,5 +1,6 @@
 import { prisma } from '../_lib/prisma.js';
 import { requireMember } from '../_lib/authz.js';
+import { withTenant } from '../_lib/tenantDb.js';
 
 // Núcleo testable (recibe el cliente Prisma por parámetro, ver api/_lib/testFakePrisma.js).
 // Bloque 3: la query SIEMPRE filtra por organizationId — regla de oro del tenancy
@@ -23,7 +24,9 @@ export default async function handler(req, res, client = prisma) {
   }
 
   try {
-    const pliegos = await listPliegos(client, ctx.orgId);
+    // Capa 2 (el where explícito de listPliegos) + Capa 3 (RLS activo dentro de
+    // withTenant). Si la primera fallara, el motor seguiría filtrando por organización.
+    const pliegos = await withTenant(client, ctx.orgId, (db) => listPliegos(db, ctx.orgId));
     res.status(200).json(pliegos);
   } catch (err) {
     console.error('Error listando pliegos:', err);

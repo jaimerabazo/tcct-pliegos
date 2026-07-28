@@ -1,6 +1,7 @@
 import { prisma } from '../_lib/prisma.js';
 import { pliegoPatchSchema } from '../_lib/schemas.js';
 import { requireMember } from '../_lib/authz.js';
+import { withTenant } from '../_lib/tenantDb.js';
 
 // Núcleo testable — ver api/_lib/testFakePrisma.js para el doble usado en tests.
 //
@@ -36,7 +37,7 @@ export default async function handler(req, res, client = prisma) {
 
   if (req.method === 'GET') {
     try {
-      const pliego = await getPliego(client, id, ctx.orgId);
+      const pliego = await withTenant(client, ctx.orgId, (db) => getPliego(db, id, ctx.orgId));
       if (!pliego) {
         res.status(404).json({ error: 'Pliego no encontrado.' });
         return;
@@ -57,7 +58,10 @@ export default async function handler(req, res, client = prisma) {
     }
     try {
       // updatedBy: audit ligero de quién tocó la fila por última vez (BLOQUE-1 §1).
-      const updated = await updatePliego(client, id, ctx.orgId, { ...result.data, updatedBy: ctx.user.id });
+      // La comprobación de pertenencia y el update comparten transacción y contexto RLS.
+      const updated = await withTenant(client, ctx.orgId, (db) => updatePliego(
+        db, id, ctx.orgId, { ...result.data, updatedBy: ctx.user.id },
+      ));
       res.status(200).json(updated);
     } catch (err) {
       if (err.code === 'P2025') {

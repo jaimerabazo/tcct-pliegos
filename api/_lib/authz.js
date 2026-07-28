@@ -12,6 +12,7 @@
 // SIEMPRE contra memberships; jamás se confía en él.
 import { prisma } from './prisma.js';
 import { requireUser } from './auth.js';
+import { withUser } from './tenantDb.js';
 
 // Guard para usar al principio de cada handler scoped:
 //   const ctx = await requireMember(req, res, { client });            // cualquier miembro
@@ -34,10 +35,10 @@ export async function requireMember(req, res, opts = {}) {
 
   let membership;
   try {
-    membership = await client.membership.findUnique({
+    membership = await withUser(client, user.id, (db) => db.membership.findUnique({
       where: { userId_organizationId: { userId: user.id, organizationId: orgId } },
       include: { organization: true },
-    });
+    }));
   } catch (err) {
     // El guard corre antes del try/catch propio de los handlers. Resolver aquí los
     // fallos de Prisma evita que una caída de BD termine como error no controlado de

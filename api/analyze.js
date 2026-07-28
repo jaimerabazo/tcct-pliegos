@@ -2,7 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from './_lib/prisma.js';
 import { pliegoFromAnalysisSchema, analysisDataSchema } from './_lib/schemas.js';
 import { requireMember } from './_lib/authz.js';
-import { recordUsage } from './_lib/usage.js';
+import { withTenant } from './_lib/tenantDb.js';
+import { recordUsageBestEffort } from './_lib/usage.js';
 import { parseShortDate } from '../src/logic.js';
 
 export const config = {
@@ -338,13 +339,17 @@ export default async function handler(req, res, client = prisma) {
       return;
     }
 
-    const saved = await persistAnalysis(client, { pliego: pliegoCheck.data, analysis: analysisCheck.data }, {
-      organizationId: ctx.orgId,
-      userId: ctx.user.id,
-    });
+    // La escritura principal se confirma antes de intentar el metering. Si usage_events
+    // falla, su transacción separada no puede deshacer un análisis ya guardado.
+    const saved = await withTenant(client, ctx.orgId, (db) =>
+      persistAnalysis(db, { pliego: pliegoCheck.data, analysis: analysisCheck.data }, {
+        organizationId: ctx.orgId,
+        userId: ctx.user.id,
+      }));
 
-    // Metering: una fila por operación LLM (no lanza nunca; el análisis ya está a salvo).
-    await recordUsage(client, {
+    // Best effort: abre y cierra su propia transacción; cualquier fallo se trata después
+    // del rollback y no cambia la respuesta al usuario.
+    await recordUsageBestEffort(client, ctx.orgId, {
       organizationId: ctx.orgId,
       userId: ctx.user.id,
       type: 'analyze',

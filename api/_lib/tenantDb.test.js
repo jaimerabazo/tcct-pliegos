@@ -2,11 +2,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { APP_TENANT_ROLE, withTenant, withUser } from './tenantDb.js';
 
-function tenantClient(canSetRole) {
+function tenantClient(roleReady, roleSafe = true) {
   const client = {
     $transaction: vi.fn((callback) => callback(client)),
     $executeRaw: vi.fn(async () => 1),
-    $queryRaw: vi.fn(async () => [{ canSetRole }]),
+    $queryRaw: vi.fn(async () => [{ roleReady, roleSafe }]),
     $executeRawUnsafe: vi.fn(async () => 1),
   };
   return client;
@@ -30,6 +30,16 @@ describe('withTenant — despliegue compatible de RLS', () => {
     await withTenant(client, 'org-a', async () => 'resultado');
 
     expect(client.$executeRawUnsafe).toHaveBeenCalledWith(`SET LOCAL ROLE ${APP_TENANT_ROLE}`);
+  });
+
+  it('falla cerrado si las políticas existen pero app_tenant puede ejercer ownership', async () => {
+    const client = tenantClient(true, false);
+    const callback = vi.fn(async () => 'resultado');
+
+    await expect(withTenant(client, 'org-a', callback)).rejects.toThrow(/ownership/i);
+
+    expect(client.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(callback).not.toHaveBeenCalled();
   });
 
   it('sigue fallando en voz alta si falta la organización', async () => {

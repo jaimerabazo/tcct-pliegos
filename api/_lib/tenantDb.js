@@ -18,11 +18,13 @@ export const APP_TENANT_ROLE = 'app_tenant';
 // Gate de despliegue expand/contract: durante unos minutos puede estar vivo el código
 // nuevo mientras la migración que crea app_tenant sigue esperando aprobación. Se exige
 // que estén las ocho políticas creadas por esa migración para no confundir un CREATE
-// ROLE parcial con un rollout terminado. Una vez listas, SET ROLE es obligatorio: no se
-// ocultan memberships o permisos mal configurados. Tampoco se captura ningún error real.
+// ROLE parcial con un rollout terminado. Una vez listas, SET ROLE es obligatorio y el
+// rol debe ser incapaz de ejercer ownership sobre las tablas protegidas. Tampoco se
+// capturan permisos o configuraciones inseguras: esos estados fallan cerrados.
 async function canAssumeTenantRole(tx) {
   const [capability] = await tx.$queryRaw`
-    SELECT to_regrole(${APP_TENANT_ROLE}) IS NOT NULL
+    SELECT
+      to_regrole(${APP_TENANT_ROLE}) IS NOT NULL
       AND (
         SELECT count(*)
         FROM pg_policies
@@ -35,9 +37,26 @@ async function canAssumeTenantRole(tx) {
             OR (tablename IN ('usage_events', 'audit_log')
               AND policyname IN ('tenant_select', 'tenant_insert'))
           )
-      ) = 8 AS "canSetRole"
+      ) = 8 AS "roleReady",
+      COALESCE((
+        SELECT NOT (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relname IN ('Pliego', 'memberships', 'invitations', 'usage_events', 'audit_log')
+              AND (c.relowner = r.oid OR pg_has_role(r.oid, c.relowner, 'MEMBER'))
+          )
+        FROM pg_roles r
+        WHERE r.rolname = ${APP_TENANT_ROLE}
+      ), false) AS "roleSafe"
   `;
-  return capability?.canSetRole === true;
+  if (capability?.roleReady !== true) return false;
+  if (capability.roleSafe !== true) {
+    throw new Error('app_tenant no es seguro: puede eludir RLS mediante privilegios u ownership.');
+  }
+  return true;
 }
 
 // Ejecuta `callback` con un cliente Prisma restringido a `organizationId`.

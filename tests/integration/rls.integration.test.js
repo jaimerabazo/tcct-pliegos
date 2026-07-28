@@ -40,6 +40,22 @@ afterAll(async () => {
 });
 
 describe('RLS: el motor filtra aunque el código no lo haga', () => {
+  it('app_tenant no posee ni puede asumir el ownership de ninguna tabla protegida', async () => {
+    const inseguras = await admin.$queryRaw`
+      SELECT c.relname AS tabla
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname IN ('Pliego', 'memberships', 'invitations', 'usage_events', 'audit_log')
+        AND (
+          c.relowner = to_regrole(${APP_TENANT_ROLE})
+          OR pg_has_role(to_regrole(${APP_TENANT_ROLE}), c.relowner, 'MEMBER')
+        )
+    `;
+
+    expect(inseguras).toEqual([]);
+  });
+
   it('organizationId es obligatorio también para escrituras que puedan eludir RLS', async () => {
     const [column] = await admin.$queryRaw`
       SELECT is_nullable AS "isNullable"

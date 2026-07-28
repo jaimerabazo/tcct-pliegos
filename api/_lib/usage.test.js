@@ -67,7 +67,7 @@ describe('recordUsage', () => {
       },
       async $executeRawUnsafe() {},
       async $executeRaw() {},
-      async $queryRaw() { return [{ canSetRole: true }]; },
+      async $queryRaw() { return [{ roleReady: true, roleSafe: true }]; },
       usageEvent: { create: () => { throw error; } },
     };
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});

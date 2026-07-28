@@ -10,6 +10,10 @@ const ownershipMigrationUrl = new URL(
   './migrations/20260728130000_reject_app_tenant_ownership/migration.sql',
   import.meta.url,
 );
+const noLoginMigrationUrl = new URL(
+  './migrations/20260728140000_reject_login_app_tenant/migration.sql',
+  import.meta.url,
+);
 
 function sqlWithoutComments(url) {
   return readFileSync(url, 'utf8').replace(/--.*$/gm, '').trim();
@@ -32,5 +36,14 @@ describe('migración de contrato RLS', () => {
     expect(sql).toContain('rolcreaterole');
     expect(sql).toContain('c.relowner = app_role_oid');
     expect(sql).toContain("pg_has_role(app_role_oid, c.relowner, 'MEMBER')");
+  });
+
+  it('rechaza que app_tenant pueda conectarse directamente a la base de datos', () => {
+    const sql = sqlWithoutComments(noLoginMigrationUrl);
+
+    expect(sql).toMatch(/^BEGIN;/);
+    expect(sql).toMatch(/COMMIT;$/);
+    expect(sql).toContain('rolcanlogin');
+    expect(sql).toContain('RAISE EXCEPTION');
   });
 });

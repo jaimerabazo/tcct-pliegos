@@ -40,6 +40,16 @@ afterAll(async () => {
 });
 
 describe('RLS: el motor filtra aunque el código no lo haga', () => {
+  it('app_tenant no puede iniciar una conexión directa', async () => {
+    const [role] = await admin.$queryRaw`
+      SELECT rolcanlogin AS "canLogin"
+      FROM pg_roles
+      WHERE rolname = ${APP_TENANT_ROLE}
+    `;
+
+    expect(role).toEqual({ canLogin: false });
+  });
+
   it('app_tenant no posee ni puede asumir el ownership de ninguna tabla protegida', async () => {
     const inseguras = await admin.$queryRaw`
       SELECT c.relname AS tabla

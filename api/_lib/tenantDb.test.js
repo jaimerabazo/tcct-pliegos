@@ -32,11 +32,11 @@ describe('withTenant — despliegue compatible de RLS', () => {
     expect(client.$executeRawUnsafe).toHaveBeenCalledWith(`SET LOCAL ROLE ${APP_TENANT_ROLE}`);
   });
 
-  it('falla cerrado si las políticas existen pero app_tenant puede ejercer ownership', async () => {
+  it('falla cerrado si las políticas existen pero app_tenant tiene capacidades inseguras', async () => {
     const client = tenantClient(true, false);
     const callback = vi.fn(async () => 'resultado');
 
-    await expect(withTenant(client, 'org-a', callback)).rejects.toThrow(/ownership/i);
+    await expect(withTenant(client, 'org-a', callback)).rejects.toThrow(/iniciar sesión|ownership/i);
 
     expect(client.$executeRawUnsafe).not.toHaveBeenCalled();
     expect(callback).not.toHaveBeenCalled();

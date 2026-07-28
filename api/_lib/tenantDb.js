@@ -39,7 +39,7 @@ async function canAssumeTenantRole(tx) {
           )
       ) = 8 AS "roleReady",
       COALESCE((
-        SELECT NOT (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole)
+        SELECT NOT (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcanlogin)
           AND NOT EXISTS (
             SELECT 1
             FROM pg_class c
@@ -54,7 +54,7 @@ async function canAssumeTenantRole(tx) {
   `;
   if (capability?.roleReady !== true) return false;
   if (capability.roleSafe !== true) {
-    throw new Error('app_tenant no es seguro: puede eludir RLS mediante privilegios u ownership.');
+    throw new Error('app_tenant no es seguro: puede iniciar sesión, eludir RLS o ejercer ownership.');
   }
   return true;
 }

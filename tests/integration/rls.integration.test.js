@@ -40,6 +40,19 @@ afterAll(async () => {
 });
 
 describe('RLS: el motor filtra aunque el código no lo haga', () => {
+  it('app_tenant puede leer pero no alterar el historial que señala el contrato RLS', async () => {
+    const [privileges] = await admin.$queryRaw`
+      SELECT
+        has_table_privilege(${APP_TENANT_ROLE}, 'public."_prisma_migrations"', 'SELECT') AS "canRead",
+        has_table_privilege(${APP_TENANT_ROLE}, 'public."_prisma_migrations"', 'INSERT')
+          OR has_table_privilege(${APP_TENANT_ROLE}, 'public."_prisma_migrations"', 'UPDATE')
+          OR has_table_privilege(${APP_TENANT_ROLE}, 'public."_prisma_migrations"', 'DELETE')
+          AS "canWrite"
+    `;
+
+    expect(privileges).toEqual({ canRead: true, canWrite: false });
+  });
+
   it('app_tenant no puede iniciar una conexión directa', async () => {
     const [role] = await admin.$queryRaw`
       SELECT rolcanlogin AS "canLogin"

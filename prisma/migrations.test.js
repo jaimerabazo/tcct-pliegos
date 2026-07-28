@@ -18,6 +18,10 @@ const organizationWritesMigrationUrl = new URL(
   './migrations/20260728150000_restrict_organization_writes/migration.sql',
   import.meta.url,
 );
+const migrationHistoryMigrationUrl = new URL(
+  './migrations/20260728160000_protect_rls_capability_signal/migration.sql',
+  import.meta.url,
+);
 
 function sqlWithoutComments(url) {
   return readFileSync(url, 'utf8').replace(/--.*$/gm, '').trim();
@@ -61,5 +65,15 @@ describe('migración de contrato RLS', () => {
     expect(sql).toContain("has_table_privilege('app_tenant', 'public.organizations', 'DELETE')");
     expect(sql).toContain("has_table_privilege('app_tenant', 'public.organizations', 'SELECT')");
     expect(sql).toContain("has_table_privilege('app_tenant', 'public.organizations', 'INSERT')");
+  });
+
+  it('impide que app_tenant altere la señal durable del contrato RLS', () => {
+    const sql = sqlWithoutComments(migrationHistoryMigrationUrl);
+
+    expect(sql).toMatch(/^BEGIN;/);
+    expect(sql).toMatch(/COMMIT;$/);
+    expect(sql).toMatch(/REVOKE INSERT, UPDATE, DELETE ON TABLE public\."_prisma_migrations"/);
+    expect(sql).toContain("has_table_privilege('app_tenant', 'public.\"_prisma_migrations\"', 'UPDATE')");
+    expect(sql).toContain("has_table_privilege('app_tenant', 'public.\"_prisma_migrations\"', 'SELECT')");
   });
 });

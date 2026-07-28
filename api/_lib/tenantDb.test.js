@@ -2,11 +2,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { APP_TENANT_ROLE, withTenant, withUser } from './tenantDb.js';
 
-function tenantClient(roleReady, roleSafe = true) {
+function tenantClient(protectionsReady, roleSafe = true, contractDeployed = protectionsReady) {
   const client = {
     $transaction: vi.fn((callback) => callback(client)),
     $executeRaw: vi.fn(async () => 1),
-    $queryRaw: vi.fn(async () => [{ roleReady, roleSafe }]),
+    $queryRaw: vi.fn(async () => [{ contractDeployed, protectionsReady, roleSafe }]),
     $executeRawUnsafe: vi.fn(async () => 1),
   };
   return client;
@@ -30,6 +30,16 @@ describe('withTenant — despliegue compatible de RLS', () => {
     await withTenant(client, 'org-a', async () => 'resultado');
 
     expect(client.$executeRawUnsafe).toHaveBeenCalledWith(`SET LOCAL ROLE ${APP_TENANT_ROLE}`);
+  });
+
+  it('falla cerrado si el contrato fue desplegado pero después desaparece una política', async () => {
+    const client = tenantClient(false, true, true);
+    const callback = vi.fn(async () => 'resultado');
+
+    await expect(withTenant(client, 'org-a', callback)).rejects.toThrow(/RLS.*incompleto/i);
+
+    expect(client.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(callback).not.toHaveBeenCalled();
   });
 
   it('falla cerrado si las políticas existen pero app_tenant tiene capacidades inseguras', async () => {

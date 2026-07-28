@@ -1,14 +1,21 @@
 # Bloque 1 — Diseño en detalle: multi-tenancy, RBAC y RLS
 
-> Baja a tierra el §4-§6 de `ARQUITECTURA-SAAS.md`. Sigue siendo papel: nada de esto se
-> implementa hasta que el diseño esté revisado (la implementación es el Bloque 3, con los
-> entornos del Bloque 2 ya montados). Cada bloque de código va anotado con su porqué.
+> Baja a tierra el §4-§6 de `ARQUITECTURA-SAAS.md`. Este documento conserva el diseño
+> objetivo. La implementación real de las fases 1–4 está descrita en
+> `BLOQUE-3-IMPLEMENTACION-TENANCY.md`.
 >
-> Estado: **borrador v1** (16/07/2026) · Decisiones pendientes marcadas como ⚖️
+> Estado: **diseño aceptado, implementación parcial** (actualizado el 24/07/2026).
+> Las fases 1–4 están implementadas. Siguen pendientes la Fase 5 (contract + RLS) y la
+> Fase 6 (suite de aislamiento contra PostgreSQL real).
 
 ---
 
 ## 1. Schema Prisma completo (v1)
+
+El schema de esta sección es el objetivo tras el contract. En el estado transitorio
+actual, `Pliego.organizationId` y `createdBy` siguen siendo nullable para mantener el
+despliegue expand/contract, y la tabla conserva el nombre histórico `Pliego`. Consultar
+`prisma/schema.prisma` para el estado ejecutable.
 
 ```prisma
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +216,10 @@ cliente que el servidor verifica siempre* contra memberships — nunca se confí
 
 ## 4. Row-Level Security: el diseño exacto
 
+> **Pendiente.** El guard `requireMember` y el scoping de queries ya están activos, pero
+> las políticas de esta sección todavía no se han aplicado. No describir el sistema
+> actual como protegido por RLS hasta completar la Fase 5 del Bloque 3.
+
 **Mecanismo** — la org del request viaja a Postgres como variable de transacción:
 
 ```sql
@@ -306,7 +317,11 @@ queries del día a día — el middleware rechaza toda request a una org con `de
 
 ---
 
-## 6. Plan de tests de aislamiento (adelanto del gate del Bloque 3)
+## 6. Contrato de tests de aislamiento
+
+Los casos de aislamiento en handlers ya existen con el doble Prisma. Falta trasladar
+este contrato a una suite contra PostgreSQL real para verificar también RLS y el
+comportamiento del pooler.
 
 La suite que convierte el §6 de la arquitectura en un CONTRATO verificado en cada PR:
 
@@ -332,5 +347,5 @@ Bloque 3 es una *extensión* de lo construido, no una reescritura.
 
 ---
 
-*Siguiente: Bloque 2 (entornos dev/staging/prod + CI con migraciones) — se monta ANTES de
-implementar esto, para que el Bloque 3 nazca ya con staging donde ensayar las migraciones.*
+*Estado de implementación y próximos pasos:
+`BLOQUE-3-IMPLEMENTACION-TENANCY.md`.*

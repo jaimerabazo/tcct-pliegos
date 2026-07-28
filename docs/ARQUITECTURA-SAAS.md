@@ -4,8 +4,12 @@
 > tocar código: es el que un equipo profesional redactaría en el kickoff. Cada decisión
 > lleva su porqué — el objetivo es tanto decidir como aprender a decidir.
 >
-> Estado: **borrador v1** (16/07/2026). Nombre del producto: pendiente ("TCCT Pliegos" muere;
-> la marca no puede referenciar al empleador actual).
+> Estado: **v1 en implementación** (actualizado el 24/07/2026). Los Bloques 0–2 están
+> cerrados y las fases 1–4 del Bloque 3 están en `develop`. El detalle del código
+> desplegado está en `BLOQUE-3-IMPLEMENTACION-TENANCY.md`.
+>
+> Nombre del producto: pendiente ("TCCT Pliegos" muere; la marca no puede referenciar al
+> empleador actual).
 
 ---
 
@@ -66,7 +70,7 @@ memberships                        ← relación usuario↔org CON rol
   PK compuesta (user_id, organization_id)
 
 invitations
-  id, organization_id, email, role, token, expires_at, accepted_at
+  id, organization_id, email, role, token_hash, expires_at, accepted_at
 
 pliegos                            ← la tabla actual, ahora scoped
   id, organization_id, created_by, updated_by, ...campos actuales..., analysis_data
@@ -109,6 +113,11 @@ ahora, imposible de reconstruir después.
 ---
 
 ## 6. Aislamiento: defensa en profundidad (el corazón del documento)
+
+Estado actual: las capas 1 y 2 están implementadas. La capa 4 cubre ya el aislamiento de
+los handlers con dobles en memoria. Para cerrar el Bloque 3 faltan la capa 3 y la parte
+de la capa 4 que prueba RLS contra PostgreSQL real. Ver
+`BLOQUE-3-IMPLEMENTACION-TENANCY.md §19`.
 
 **Capa 1 — Authz en el endpoint**: `requireMember` valida usuario + membership + rol.
 
@@ -187,8 +196,8 @@ production Vercel prod + proyecto Supabase "prod" REGIÓN UE  → datos reales, 
 | Generador PPTX (builder/renderer/theme) | ✅ Intacto (rebranding del deck pendiente) |
 | Auth magic link + guard JWT + AuthGate | ✅ Base directa; se le añade la dimensión org/rol |
 | Tests + CI + patrones de inyección | ✅ La cultura entera sobrevive |
-| Schema `Pliego` global | 🔄 Se rediseña scoped por org (§4) |
-| Workspace único compartido | ❌ Muere — era el supuesto de herramienta interna |
+| Schema `Pliego` global | ✅ Scoped por org; pendiente hacer obligatorias las columnas tenant |
+| Workspace único compartido | ✅ Sustituido por organizaciones y memberships |
 | Marca "TCCT Pliegos" y branding del deck | ❌ Muere |
 
 ## 13. Riesgos y TODOs no técnicos (bloqueantes reales)
@@ -203,7 +212,9 @@ production Vercel prod + proyecto Supabase "prod" REGIÓN UE  → datos reales, 
 - [x] **Bloque 0** — este documento.
 - [x] **Bloque 1** — Diseño en detalle del tenancy/RBAC/RLS (`docs/BLOQUE-1-DISENO-TENANCY.md`).
 - [x] **Bloque 2** — Entornos + CI de migraciones (`docs/BLOQUE-2-ENTORNOS.md`). Nota: 2 entornos (dev+staging), prod aplazado por el plan free de Supabase (ver ese doc §0).
-- [ ] **Bloque 3** — Implementación tenancy: orgs, memberships, invitaciones, scoping, RLS, tests de aislamiento. ← **siguiente** (rama `feat/tenancy`).
+- [~] **Bloque 3** — Fases 1–4 completadas: orgs, memberships, invitaciones, scoping y
+  onboarding (`docs/BLOQUE-3-IMPLEMENTACION-TENANCY.md`). Pendientes la **Fase 5**
+  (contract + RLS) y la **Fase 6** (gate de aislamiento contra PostgreSQL real).
 - [ ] **Bloque 4** — Billing: Stripe + metering + límites.
 - [ ] **Bloque 5** — Hardening: audit log, rate limits, Sentry, backups probados, docs RGPD.
 - [ ] **Bloque 6** — Pilotos: 2-3 consultoras conocidas, feedback, pricing real.

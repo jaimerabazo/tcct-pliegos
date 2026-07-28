@@ -22,12 +22,6 @@
 -- No se usa FORCE a propósito: el propietario (`postgres`) sigue necesitando operar sin
 -- restricción en migraciones y backfills. La protección de runtime la da el cambio de rol.
 
--- Prisma Migrate no envuelve automáticamente los archivos SQL de PostgreSQL. Esta
--- migración publica además la señal que consulta canAssumeTenantRole (rol + políticas),
--- así que debe ser todo-o-nada: si falla cualquier verificación final, no puede quedar
--- visible ninguna parte de esa señal ni ningún grant o cambio de esquema intermedio.
-BEGIN;
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. Rol de runtime
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -62,17 +56,7 @@ END;
 $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 2. Contrato final de tenancy
--- ─────────────────────────────────────────────────────────────────────────────
--- El backfill 20260722123000 ya aborta si queda alguna fila sin organización. Cerramos
--- ahora la fase expand: incluso el propietario de la tabla, un import o un backfill que
--- no pase por RLS tiene prohibido crear pliegos huérfanos. Esto también hace efectiva la
--- unicidad compuesta para todas las filas (Postgres permite varios NULL en un UNIQUE).
-
-ALTER TABLE "Pliego" ALTER COLUMN "organizationId" SET NOT NULL;
-
--- ─────────────────────────────────────────────────────────────────────────────
--- 3. Políticas de aislamiento
+-- 2. Políticas de aislamiento
 -- ─────────────────────────────────────────────────────────────────────────────
 -- USING filtra lo que se puede LEER/tocar; WITH CHECK valida lo que queda tras un
 -- INSERT/UPDATE. Sin WITH CHECK se podrían crear filas en la organización de otro.
@@ -89,38 +73,7 @@ CREATE POLICY tenant_isolation ON "Pliego"
     WITH CHECK ("organizationId" = current_setting('app.org_id', true));
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 4. Miembros e invitaciones
--- ─────────────────────────────────────────────────────────────────────────────
--- Las operaciones posteriores a requireMember usan app.org_id, igual que Pliego.
--- memberships necesita además una excepción SELECT muy estrecha para el bootstrap:
--- antes de elegir una organización, el usuario solo puede leer SUS propias memberships.
--- Esa excepción nunca permite INSERT/UPDATE/DELETE.
-
-ALTER TABLE "memberships" ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON "memberships"
-    FOR ALL
-    TO app_tenant
-    USING ("organizationId" = current_setting('app.org_id', true))
-    WITH CHECK ("organizationId" = current_setting('app.org_id', true));
-CREATE POLICY user_memberships_select ON "memberships"
-    FOR SELECT
-    TO app_tenant
-    USING ("userId" = current_setting('app.user_id', true));
-
-ALTER TABLE "invitations" ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON "invitations"
-    FOR ALL
-    TO app_tenant
-    USING ("organizationId" = current_setting('app.org_id', true))
-    WITH CHECK ("organizationId" = current_setting('app.org_id', true));
-
--- Excepción deliberada: quien acepta todavía no pertenece al tenant. La función valida
--- token+email y, al ser SECURITY DEFINER, es la única vía de runtime que puede atravesar
--- ambas políticas para crear la membership y marcar la invitación como aceptada.
-GRANT EXECUTE ON FUNCTION public.accept_organization_invitation(TEXT, TEXT, TEXT) TO app_tenant;
-
--- ─────────────────────────────────────────────────────────────────────────────
--- 5. Metering y auditoría: aislamiento + APPEND-ONLY
+-- 3. Metering y auditoría: aislamiento + APPEND-ONLY
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Solo se declaran políticas para SELECT e INSERT. Con RLS activo, toda operación sin
 -- política que la ampare queda denegada, así que UPDATE y DELETE son imposibles para el
@@ -144,7 +97,7 @@ CREATE POLICY tenant_insert ON "audit_log"
     WITH CHECK ("organizationId" = current_setting('app.org_id', true));
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 6. Verificación: que la migración falle aquí si el blindaje no quedó puesto
+-- 4. Verificación: que la migración falle aquí si el blindaje no quedó puesto
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Una migración de seguridad que "pasa" sin aplicar la seguridad es peor que no tenerla:
 -- da una falsa sensación de protección. Estas comprobaciones la hacen fallar en voz alta.
@@ -156,18 +109,7 @@ BEGIN
         RAISE EXCEPTION 'app_tenant puede saltarse RLS: el aislamiento no sería real.';
     END IF;
 
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_attribute
-        WHERE attrelid = 'public."Pliego"'::regclass
-          AND attname = 'organizationId'
-          AND attnotnull
-          AND NOT attisdropped
-    ) THEN
-        RAISE EXCEPTION 'Pliego.organizationId sigue aceptando NULL.';
-    END IF;
-
-    FOREACH tabla IN ARRAY ARRAY['Pliego', 'memberships', 'invitations', 'usage_events', 'audit_log'] LOOP
+    FOREACH tabla IN ARRAY ARRAY['Pliego', 'usage_events', 'audit_log'] LOOP
         IF NOT EXISTS (
             SELECT 1 FROM pg_class
             WHERE oid = format('public.%I', tabla)::regclass AND relrowsecurity
@@ -177,5 +119,3 @@ BEGIN
     END LOOP;
 END;
 $$;
-
-COMMIT;

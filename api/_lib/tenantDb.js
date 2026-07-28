@@ -44,7 +44,21 @@ async function canAssumeTenantRole(tx) {
             OR (tablename IN ('usage_events', 'audit_log')
               AND policyname IN ('tenant_select', 'tenant_insert'))
           )
-      ) = 8 AS "protectionsReady",
+      ) = 8
+      -- Contar políticas NO basta: ALTER TABLE ... DISABLE ROW LEVEL SECURITY deja las
+      -- filas de pg_policies intactas, así que el recuento seguiría dando 8 mientras la
+      -- tabla queda de par en par. Sin esta comprobación, el gate daría por bueno un
+      -- contrato roto y asumiría app_tenant: una query sin scope leería o modificaría
+      -- las filas de todos los tenants, justo lo contrario de lo que protege este gate.
+      -- El interruptor real es relrowsecurity, y se exige en las cinco tablas.
+      AND (
+        SELECT count(*)
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname IN ('Pliego', 'memberships', 'invitations', 'usage_events', 'audit_log')
+          AND c.relrowsecurity
+      ) = 5 AS "protectionsReady",
       COALESCE((
         SELECT NOT (r.rolsuper OR r.rolbypassrls OR r.rolcreaterole OR r.rolcanlogin)
           AND NOT EXISTS (

@@ -8,7 +8,7 @@
 // Es la diferencia entre "confío en no tener bugs" y "aunque tenga un bug, no hay fuga".
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withTenant, withUser, APP_TENANT_ROLE } from '../../api/_lib/tenantDb.js';
-import { acceptInvitation, hashInvitationToken } from '../../api/_lib/organizations.js';
+import { acceptInvitation, hashInvitationToken, removeMember } from '../../api/_lib/organizations.js';
 import { createAdminPrisma, createOrgFixture, createTestPrisma, cleanupOrgs } from './helpers/testDb.js';
 
 // `prisma` = cliente de runtime, sujeto a RLS (es el que ejecuta los "ataques").
@@ -368,5 +368,73 @@ describe('RLS: metering y auditoría son append-only', () => {
 
     const desdeA = await withTenant(prisma, orgA.organizationId, (db) => db.usageEvent.findMany());
     expect(desdeA.every((evento) => evento.organizationId === orgA.organizationId)).toBe(true);
+  });
+});
+
+// Regresiones de dos fallos reales encontrados en revisión (fase 5b). Ambos son del tipo
+// más peligroso: el candado *parecía* puesto pero no lo estaba, o bloqueaba de más.
+describe('RLS: regresiones del endurecimiento de permisos', () => {
+  it('quitar un miembro funciona bajo app_tenant pese a no tener UPDATE sobre organizations', async () => {
+    // La exclusión mutua se hacía con SELECT ... FOR UPDATE sobre organizations, que exige
+    // privilegio UPDATE. Al retirárselo a app_tenant (por seguridad), TODA baja de miembro
+    // moría con "permission denied" antes siquiera de mirar la membership.
+    const org = await createOrgFixture(admin, {
+      label: 'rls-remove',
+      members: [{ userId: 'rls-remove-owner', role: 'owner' }, { userId: 'rls-remove-member', role: 'member' }],
+    });
+
+    await removeMember(prisma, {
+      organizationId: org.organizationId,
+      actorUserId: 'rls-remove-owner',
+      targetUserId: 'rls-remove-member',
+    });
+
+    const quedan = await admin.membership.findMany({ where: { organizationId: org.organizationId } });
+    expect(quedan.map((m) => m.userId)).toEqual(['rls-remove-owner']);
+
+    // Y la regla que ese lock protege sigue viva: el último owner no puede irse.
+    await expect(removeMember(prisma, {
+      organizationId: org.organizationId,
+      actorUserId: 'rls-remove-owner',
+      targetUserId: 'rls-remove-owner',
+    })).rejects.toMatchObject({ code: 'LAST_OWNER' });
+
+    await cleanupOrgs(admin, [org.organizationId]);
+  });
+
+  it('el gate exige RLS ACTIVO, no solo que existan las políticas', async () => {
+    // Desactivar el RLS de una tabla no borra sus filas de pg_policies: un gate que solo
+    // cuente políticas seguiría dando "todo listo" con la tabla abierta de par en par.
+    await admin.$executeRawUnsafe(`DROP TABLE IF EXISTS rls_gate_probe`);
+    await admin.$executeRawUnsafe(`CREATE TABLE rls_gate_probe (id text, org_id text)`);
+    await admin.$executeRawUnsafe(`ALTER TABLE rls_gate_probe ENABLE ROW LEVEL SECURITY`);
+    await admin.$executeRawUnsafe(
+      `CREATE POLICY tenant_isolation ON rls_gate_probe USING (org_id = current_setting('app.org_id', true))`,
+    );
+
+    const contarPoliticas = async () => {
+      const [fila] = await admin.$queryRawUnsafe(
+        `SELECT count(*)::int AS n FROM pg_policies WHERE tablename = 'rls_gate_probe'`,
+      );
+      return fila.n;
+    };
+    const rlsActivo = async () => {
+      const [fila] = await admin.$queryRawUnsafe(
+        `SELECT relrowsecurity AS activo FROM pg_class WHERE relname = 'rls_gate_probe'`,
+      );
+      return fila.activo;
+    };
+
+    expect(await contarPoliticas()).toBe(1);
+    expect(await rlsActivo()).toBe(true);
+
+    await admin.$executeRawUnsafe(`ALTER TABLE rls_gate_probe DISABLE ROW LEVEL SECURITY`);
+
+    // La política sigue ahí (por eso contarlas no vale)...
+    expect(await contarPoliticas()).toBe(1);
+    // ...pero el interruptor real está apagado, y es lo que el gate mira ahora.
+    expect(await rlsActivo()).toBe(false);
+
+    await admin.$executeRawUnsafe(`DROP TABLE IF EXISTS rls_gate_probe`);
   });
 });

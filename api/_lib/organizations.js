@@ -185,10 +185,17 @@ export async function listMembers(client, organizationId) {
 
 export async function removeMember(client, { organizationId, actorUserId, targetUserId }) {
   return withTenant(client, organizationId, async (tx) => {
-    // Bloquea la organización para que dos owners no puedan abandonar a la vez viendo
-    // ambos ownerCount=2 y dejar el tenant sin owner.
-    await tx.$queryRaw`
-      SELECT id FROM organizations WHERE id = ${organizationId} FOR UPDATE
+    // Serializa las bajas de la misma organización para que dos owners no puedan
+    // abandonar a la vez viendo ambos ownerCount=2 y dejar el tenant sin owner.
+    //
+    // Es un advisory lock y NO un `SELECT ... FOR UPDATE` sobre organizations: bloquear
+    // esa fila exige privilegio UPDATE sobre la tabla, que a `app_tenant` se le retiró a
+    // propósito (migración 20260728150000) porque ninguna ruta de runtime actualiza
+    // organizaciones. Con el row lock, toda petición de quitar miembro moría con
+    // "permission denied". El advisory lock da la misma exclusión mutua sin pedir
+    // permisos de escritura, y muere con la transacción igual que el resto del contexto.
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`org-members:${organizationId}`}, 0))
     `;
     const target = await tx.membership.findUnique({
       where: { userId_organizationId: { userId: targetUserId, organizationId } },

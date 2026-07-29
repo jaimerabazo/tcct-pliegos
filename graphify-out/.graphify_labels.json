@@ -8,7 +8,7 @@
   "6": "PPTX Renderer & Pagination",
   "7": "presentation.js",
   "8": "SaaS Tenancy Docs & CI/CD Pipeline",
-  "9": "Dev Dependencies (package.json)",
+  "9": "devDependencies",
   "10": "Supabase Auth Frontend",
   "11": "usage.test.js",
   "12": "Prisma Migration Tests",

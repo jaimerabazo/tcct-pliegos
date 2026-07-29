@@ -1,16 +1,16 @@
 # Graph Report - tcct-pliegos  (2026-07-29)
 
 ## Corpus Check
-- 113 files · ~69,715 words
+- 113 files · ~69,770 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 594 nodes · 1254 edges · 39 communities (25 shown, 14 thin omitted)
+- 594 nodes · 1253 edges · 39 communities (25 shown, 14 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 22 edges (avg confidence: 0.7)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `0e5c7bc8`
+- Built from commit: `3efe2814`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -24,7 +24,7 @@
 - PPTX Renderer & Pagination
 - presentation.js
 - SaaS Tenancy Docs & CI/CD Pipeline
-- Dev Dependencies (package.json)
+- devDependencies
 - Supabase Auth Frontend
 - usage.test.js
 - Prisma Migration Tests
@@ -61,16 +61,16 @@
 10. `handler()` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `buildLotesBlocks()` --calls--> `formatEuroFull()`  [EXTRACTED]
-  api/_lib/presentationBuilder.js → src/logic.js
+- `main()` --references--> `@prisma/client`  [EXTRACTED]
+  prisma/seed.js → package.json
 - `buildPerfilesBlocks()` --calls--> `formatNumber()`  [EXTRACTED]
-  api/_lib/presentationBuilder.js → src/logic.js
-- `buildSolvenciaBlocks()` --calls--> `formatEuroFull()`  [EXTRACTED]
-  api/_lib/presentationBuilder.js → src/logic.js
-- `buildCoverSpec()` --calls--> `formatEuroFull()`  [EXTRACTED]
   api/_lib/presentationBuilder.js → src/logic.js
 - `buildCoverSpec()` --calls--> `formatNumber()`  [EXTRACTED]
   api/_lib/presentationBuilder.js → src/logic.js
+- `CI job: Aislamiento cross-tenant (Postgres real)` --conceptually_related_to--> `Cross-tenant isolation test plan (Org A / Org B fixture)`  [INFERRED]
+  .github/workflows/ci.yml → docs/BLOQUE-1-DISENO-TENANCY.md
+- `Provisioned non-superuser role pliegos_runtime` --references--> `app_tenant Postgres role (non-owner, no BYPASSRLS)`  [INFERRED]
+  .github/workflows/ci.yml → docs/BLOQUE-1-DISENO-TENANCY.md
 
 ## Import Cycles
 - None detected.
@@ -87,12 +87,12 @@ Cohesion: 0.09
 Nodes (46): requireMember(), acceptInvitation(), availableSlug(), createInvitation(), createOrganization(), hashInvitationToken(), listMembers(), listPendingInvitations() (+38 more)
 
 ### Community 1 - "App.jsx"
-Cohesion: 0.08
-Nodes (37): apiFetch(), getActiveOrgId(), jsonOrThrow(), setActiveOrgId(), acceptInvitation(), createInvitation(), createOrganization(), listMembers() (+29 more)
+Cohesion: 0.10
+Nodes (32): apiFetch(), getActiveOrgId(), jsonOrThrow(), setActiveOrgId(), acceptInvitation(), createInvitation(), createOrganization(), listMembers() (+24 more)
 
 ### Community 2 - "Analysis.jsx"
-Cohesion: 0.10
-Nodes (34): FieldLabel(), fieldStyle, NumberField(), SelectField(), TextAreaField(), TextField(), ConfidenceBadge(), EditButton() (+26 more)
+Cohesion: 0.08
+Nodes (38): FieldLabel(), fieldStyle, NumberField(), SelectField(), TextAreaField(), TextField(), ConfidenceBadge(), EditButton() (+30 more)
 
 ### Community 3 - "phase4.test.js"
 Cohesion: 0.07
@@ -112,13 +112,13 @@ Nodes (38): addContentHeader(), addFooter(), bodySpan(), charsPerLine(), estimat
 
 ### Community 7 - "presentation.js"
 Cohesion: 0.12
-Nodes (31): buildCoverSpec(), buildCriteriosBlocks(), buildFinalSpec(), buildLotesBlocks(), buildPenalizacionesBlocks(), buildPerfilesBlocks(), buildPlazosBlocks(), buildResumenBlocks() (+23 more)
+Nodes (32): buildCoverSpec(), buildCriteriosBlocks(), buildFinalSpec(), buildLotesBlocks(), buildPenalizacionesBlocks(), buildPerfilesBlocks(), buildPlazosBlocks(), buildResumenBlocks() (+24 more)
 
 ### Community 8 - "SaaS Tenancy Docs & CI/CD Pipeline"
 Cohesion: 0.07
 Nodes (33): Bloque 3 multi-tenancy in progress (feat/tenancy branch series), Pivot to commercial B2B SaaS (from internal TCCT tool), Prisma 7 + Supabase pooler gotchas (IPv6 Direct, driver adapter), Analizador de Pliegos / TCCT Pliegos project, Typography: Space Grotesk + Inter + JetBrains Mono, v1 data model (organizations/memberships/invitations/pliegos/usage_events/audit_log), ARQUITECTURA-SAAS.md — Bloque 0 architecture document, app_tenant Postgres role (non-owner, no BYPASSRLS) (+25 more)
 
-### Community 9 - "Dev Dependencies (package.json)"
+### Community 9 - "devDependencies"
 Cohesion: 0.07
 Nodes (29): autoprefixer, dotenv, jsdom, devDependencies, autoprefixer, dotenv, jsdom, postcss (+21 more)
 
@@ -155,7 +155,7 @@ Cohesion: 0.36
 Nodes (6): adminConfig(), authInviteError(), EXISTING_USER_ERROR_CODES, getSupabaseAdmin(), getUserEmails(), inviteUserByEmail()
 
 ## Knowledge Gaps
-- **162 isolated node(s):** `encoder`, `ORG`, `ORG_BORRADA`, `SECTION_LABELS`, `SECTION_BUILDERS` (+157 more)
+- **162 isolated node(s):** `name`, `private`, `version`, `type`, `dev` (+157 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **14 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -166,13 +166,13 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.169) - this node is a cross-community bridge._
 - **Why does `@prisma/client` connect `dependencies` to `analyze.js`?**
   _High betweenness centrality (0.168) - this node is a cross-community bridge._
-- **What connects `encoder`, `ORG`, `ORG_BORRADA` to the rest of the system?**
+- **What connects `name`, `private`, `version` to the rest of the system?**
   _162 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `isolation.integration.test.js` be split into smaller, more focused modules?**
   _Cohesion score 0.09016393442622951 - nodes in this community are weakly interconnected._
 - **Should `App.jsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.07838660578386605 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09994155464640561 - nodes in this community are weakly interconnected._
 - **Should `Analysis.jsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.10465116279069768 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07894736842105263 - nodes in this community are weakly interconnected._
 - **Should `phase4.test.js` be split into smaller, more focused modules?**
   _Cohesion score 0.06874669487043893 - nodes in this community are weakly interconnected._

@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { withTenant, withUser } from './tenantDb.js';
 
 // Debe mantenerse alineado con Authentication > Email OTP Expiration en Supabase.
 const INVITATION_TTL_MS = 60 * 60 * 1000;
@@ -28,7 +29,7 @@ async function availableSlug(client, name) {
 }
 
 export async function createOrganization(client, { name, userId }) {
-  return client.$transaction(async (tx) => {
+  return withUser(client, userId, async (tx) => {
     // Serializa nombres que producirían el mismo slug para que dos altas simultáneas
     // no pasen ambas el findUnique y una termine en P2002.
     const slugLock = slugifyOrganizationName(name);
@@ -39,6 +40,9 @@ export async function createOrganization(client, { name, userId }) {
     const organization = await tx.organization.create({
       data: { name, slug },
     });
+    // La membership inicial ya es una operación tenant: fijamos el id recién creado
+    // dentro de esta misma transacción antes de insertarla.
+    await tx.$executeRaw`SELECT set_config('app.org_id', ${organization.id}, true)`;
     await tx.membership.create({
       data: { userId, organizationId: organization.id, role: 'owner' },
     });
@@ -52,7 +56,7 @@ export async function createInvitation(
   { now = new Date(), token = randomBytes(32).toString('base64url') } = {},
 ) {
   const normalizedEmail = email.trim().toLowerCase();
-  const invitationState = await client.$transaction(async (tx) => {
+  const invitationState = await withTenant(client, organizationId, async (tx) => {
     // El lock evita dos invitaciones pendientes si llegan dos requests concurrentes.
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(
@@ -99,7 +103,7 @@ export async function createInvitation(
 }
 
 export async function rollbackInvitation(client, { invitation, previousInvitation }) {
-  return client.$transaction(async (tx) => {
+  return withTenant(client, invitation.organizationId, async (tx) => {
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(
         hashtextextended(${`invitation:${invitation.organizationId}:${invitation.email}`}, 0)
@@ -129,14 +133,14 @@ export async function rollbackInvitation(client, { invitation, previousInvitatio
 }
 
 export async function listPendingInvitations(client, organizationId, { now = new Date() } = {}) {
-  const invitations = await client.invitation.findMany({
+  const invitations = await withTenant(client, organizationId, (db) => db.invitation.findMany({
     where: {
       organizationId,
       acceptedAt: null,
       expiresAt: { gt: now },
     },
     orderBy: { createdAt: 'desc' },
-  });
+  }));
 
   // Nunca exponer tokenHash: aunque no sea el token en claro, es material sensible
   // interno y el owner solo necesita los metadatos para gestionar la invitación.
@@ -157,14 +161,14 @@ export async function revokePendingInvitation(
 ) {
   // deleteMany convierte comprobación+borrado en una única sentencia. Si la aceptación
   // concurrente gana el bloqueo de la fila, acceptedAt deja de ser null y no se borra.
-  const result = await client.invitation.deleteMany({
+  const result = await withTenant(client, organizationId, (db) => db.invitation.deleteMany({
     where: {
       id: invitationId,
       organizationId,
       acceptedAt: null,
       expiresAt: { gt: now },
     },
-  });
+  }));
   if (result.count === 0) {
     const err = new Error('Invitación pendiente no encontrada.');
     err.code = 'INVITATION_NOT_FOUND';
@@ -173,18 +177,25 @@ export async function revokePendingInvitation(
 }
 
 export async function listMembers(client, organizationId) {
-  return client.membership.findMany({
+  return withTenant(client, organizationId, (db) => db.membership.findMany({
     where: { organizationId },
     orderBy: { createdAt: 'asc' },
-  });
+  }));
 }
 
 export async function removeMember(client, { organizationId, actorUserId, targetUserId }) {
-  return client.$transaction(async (tx) => {
-    // Bloquea la organización para que dos owners no puedan abandonar a la vez viendo
-    // ambos ownerCount=2 y dejar el tenant sin owner.
-    await tx.$queryRaw`
-      SELECT id FROM organizations WHERE id = ${organizationId} FOR UPDATE
+  return withTenant(client, organizationId, async (tx) => {
+    // Serializa las bajas de la misma organización para que dos owners no puedan
+    // abandonar a la vez viendo ambos ownerCount=2 y dejar el tenant sin owner.
+    //
+    // Es un advisory lock y NO un `SELECT ... FOR UPDATE` sobre organizations: bloquear
+    // esa fila exige privilegio UPDATE sobre la tabla, que a `app_tenant` se le retiró a
+    // propósito (migración 20260728150000) porque ninguna ruta de runtime actualiza
+    // organizaciones. Con el row lock, toda petición de quitar miembro moría con
+    // "permission denied". El advisory lock da la misma exclusión mutua sin pedir
+    // permisos de escritura, y muere con la transacción igual que el resto del contexto.
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`org-members:${organizationId}`}, 0))
     `;
     const target = await tx.membership.findUnique({
       where: { userId_organizationId: { userId: targetUserId, organizationId } },

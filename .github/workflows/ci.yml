@@ -4,7 +4,10 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    # Además de main/develop, los PR entre ramas de feature (p. ej. las sub-fases del
+    # bloque de tenancy, que se apilan unas sobre otras) también pasan por el gate: el
+    # aislamiento cross-tenant no debería revisarse solo en el último PR de la serie.
+    branches: [main, develop, 'feat/**']
 
 jobs:
   test:
@@ -29,3 +32,97 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  integration:
+    name: Aislamiento cross-tenant (Postgres real)
+    runs-on: ubuntu-latest
+
+    # Postgres efímero: se crea y se destruye con el job, así cada corrida parte de una
+    # base limpia. Los dobles en memoria de la suite unitaria no ejecutan constraints,
+    # cascadas ni políticas RLS — esto sí.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pliegos_test
+        ports:
+          - 5432:5432
+        # Sin el healthcheck, los pasos siguientes arrancarían antes de que Postgres
+        # acepte conexiones y la migración fallaría de forma intermitente.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Las migraciones necesitan un propietario/admin, pero la aplicación y los tests
+      # nunca deben conectarse como superusuario: PostgreSQL permitiría al superusuario
+      # saltarse RLS incluso en tablas con FORCE ROW LEVEL SECURITY.
+      MIGRATION_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pliegos_test
+      DATABASE_URL: postgresql://pliegos_runtime:pliegos_runtime@localhost:5432/pliegos_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `migrate deploy` (no `dev`): aplica las migraciones ya versionadas, sin generar
+      # ninguna. Es el mismo comando que corre contra staging, así que este job también
+      # verifica que la carpeta de migraciones se aplica limpia sobre una BD vacía.
+      - name: Apply migrations
+        env:
+          DATABASE_URL: ${{ env.MIGRATION_DATABASE_URL }}
+        run: npm run db:migrate:deploy
+
+      # El rol de runtime no es propietario de las tablas y carece expresamente de los
+      # atributos que eluden RLS. Los grants se aplican después de las migraciones para
+      # incluir todos los objetos que estas hayan creado.
+      - name: Provision non-superuser runtime role
+        run: |
+          psql "$MIGRATION_DATABASE_URL" --set ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE pliegos_runtime
+            LOGIN PASSWORD 'pliegos_runtime'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+          GRANT CONNECT ON DATABASE pliegos_test TO pliegos_runtime;
+          GRANT USAGE ON SCHEMA public TO pliegos_runtime;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO pliegos_runtime;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO pliegos_runtime;
+          GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO pliegos_runtime;
+
+          -- withTenant() hace SET LOCAL ROLE app_tenant en cada request: el rol con el
+          -- que se conecta debe ser miembro para poder asumirlo.
+          GRANT app_tenant TO pliegos_runtime;
+
+          DO $check_role$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_roles WHERE rolname = 'pliegos_runtime'
+            ) THEN
+              RAISE EXCEPTION 'No se ha creado el rol de runtime';
+            END IF;
+
+            IF EXISTS (
+              SELECT 1
+              FROM pg_roles
+              WHERE rolname IN ('pliegos_runtime', 'app_tenant')
+                AND (rolsuper OR rolbypassrls)
+            ) THEN
+              RAISE EXCEPTION 'Un rol de runtime puede saltarse RLS';
+            END IF;
+          END;
+          $check_role$;
+          SQL
+
+      - name: Run isolation suite
+        run: npm run test:integration

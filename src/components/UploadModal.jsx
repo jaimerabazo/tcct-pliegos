@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { UploadCloud, X, Loader2, FileText, AlertTriangle, Zap } from 'lucide-react';
+import { UploadCloud, X, FileText, AlertTriangle, Zap } from 'lucide-react';
+import { ThinkingOrb } from 'thinking-orbs';
 import { analyzePdf } from '../api/pliegos.js';
 import { theme } from '../theme.js';
 
@@ -123,9 +124,19 @@ export const UploadModal = ({ open, onClose, onComplete }) => {
         <div className="p-6">
           {processing ? (
             <div className="py-6">
-              <div className="flex items-center gap-3 mb-5">
-                <Loader2 size={18} strokeWidth={2} color={theme.link} className="animate-spin" />
-                <div className="text-[13px]" style={{ color: theme.text, fontWeight: 500 }}>{UPLOAD_STEPS[stepIndex]}</div>
+              {/* El análisis con Claude tarda decenas de segundos: el orb ocupa el centro
+                  de la espera en vez de un spinner de 18px al margen. Es canvas 2D y se
+                  degrada solo si no hay contexto (p. ej. jsdom en los tests). */}
+              <div className="flex flex-col items-center text-center mb-6">
+                <ThinkingOrb
+                  state="composing"
+                  size={64}
+                  speed={2}
+                  aria-label="Analizando el pliego"
+                />
+                <div className="mt-4 text-[13px]" style={{ color: theme.text, fontWeight: 500 }}>
+                  {UPLOAD_STEPS[stepIndex]}
+                </div>
               </div>
               <div className="h-1.5 rounded-full overflow-hidden" style={{ background: theme.border }}>
                 <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: theme.link }} />

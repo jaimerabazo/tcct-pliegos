@@ -48,16 +48,21 @@ describe('handler POST /api/pliegos/[id]/presentation — auth', () => {
   });
 
   it('responde 404 para un pliego de otra org antes de usar Claude', async () => {
+    const client = fakePrisma();
+    const transaction = vi.spyOn(client, '$transaction');
     const res = createFakeRes();
     await handler({
       method: 'POST',
       headers,
       query: { id: 'b' },
       body: { ...rowB, analysisData: {} },
-    }, res, fakePrisma());
+    }, res, client);
 
     expect(res.statusCode).toBe(404);
     expect(res.body.error).toMatch(/no encontrado/i);
+    // Una transacción verifica la membership por app.user_id y otra carga el pliego
+    // con app.org_id; ambas deben quedar bajo sus respectivas políticas RLS.
+    expect(transaction).toHaveBeenCalledTimes(2);
   });
 
   it('responde 500 JSON si falla la comprobación scoped', async () => {

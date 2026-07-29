@@ -93,8 +93,8 @@ model Invitation {
 
 model Pliego {
   id             String    @id @default(cuid())
-  organizationId String? // LA columna del tenancy. Nullable SOLO durante el expand; el
-  //                        contract (fase 5) la hace NOT NULL cuando todo escriba scoped.
+  organizationId String // LA columna del tenancy. Obligatoria desde el contract de fase 5:
+  //                       ningún pliego puede existir fuera de una organización.
   expediente     String
   titulo         String
   organismo      String
@@ -112,7 +112,7 @@ model Pliego {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, expediente]) // el mismo expediente público puede existir en varios tenants
   @@index([organizationId, fechaAnalisis(sort: Desc)]) // la query del dashboard, tal cual

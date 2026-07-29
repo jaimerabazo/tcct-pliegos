@@ -1,16 +1,16 @@
 {
-  "0": "Multi-Tenant Auth API & Isolation Tests",
-  "1": "Org Onboarding & App Shell (Frontend)",
-  "2": "Pliego Analysis & Dashboard UI",
-  "3": "API Test Suites (Auth/Usage/Tenancy)",
-  "4": "Production Dependencies (package.json)",
-  "5": "Analysis Ingestion & Zod Schemas",
+  "0": "isolation.integration.test.js",
+  "1": "App.jsx",
+  "2": "Analysis.jsx",
+  "3": "phase4.test.js",
+  "4": "dependencies",
+  "5": "analyze.js",
   "6": "PPTX Renderer & Pagination",
-  "7": "Presentation Builder & Endpoint",
+  "7": "presentation.js",
   "8": "SaaS Tenancy Docs & CI/CD Pipeline",
   "9": "Dev Dependencies (package.json)",
   "10": "Supabase Auth Frontend",
-  "11": "Supabase Admin Invitations",
+  "11": "usage.test.js",
   "12": "Prisma Migration Tests",
   "13": "Vercel Function Config",
   "14": "RLS Tenant Isolation Design",
@@ -35,5 +35,7 @@
   "33": "Tailwind Config",
   "34": "Vite Config",
   "35": "Vitest Config",
-  "36": "Vitest Integration Config"
+  "36": "Vitest Integration Config",
+  "37": "Bloque 3 — Implementación del multi-tenancy y onboarding",
+  "38": "supabaseAdmin.js"
 }
